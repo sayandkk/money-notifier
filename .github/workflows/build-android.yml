@@ -30,24 +30,19 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Setup Gradle 8.3
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.3'
 
       - name: Accept Android SDK Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Ensure Gradle Wrapper Exists
-        working-directory: mobile-app/android
-        run: |
-          mkdir -p gradle/wrapper
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            curl -fsSL -o gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.3.0/gradle/wrapper/gradle-wrapper.jar || true
-          fi
-          chmod +x gradlew
-
       - name: Build Android Debug APK
         working-directory: mobile-app/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
