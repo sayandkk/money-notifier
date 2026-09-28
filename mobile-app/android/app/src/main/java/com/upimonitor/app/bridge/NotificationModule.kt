@@ -155,12 +155,12 @@ class NotificationModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun addListener(eventName: String) {
+    fun addListener(@Suppress("UNUSED_PARAMETER") eventName: String) {
         // Keep for RN Event Emitter
     }
 
     @ReactMethod
-    fun removeListeners(count: Int) {
+    fun removeListeners(@Suppress("UNUSED_PARAMETER") count: Int) {
         // Keep for RN Event Emitter
     }
 }

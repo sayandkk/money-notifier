@@ -36,9 +36,12 @@ jobs:
         with:
           gradle-version: '8.3'
 
-      - name: Accept Android SDK Licenses
+      - name: Generate Debug Keystore
+        working-directory: mobile-app/android/app
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build Android Debug APK
         working-directory: mobile-app/android
