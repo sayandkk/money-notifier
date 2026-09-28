@@ -1,0 +1,24 @@
+# Node & Electron
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+electron-dashboard/payments_history.json
+
+# Android
+mobile-app/android/.gradle
+mobile-app/android/build
+mobile-app/android/app/build
+mobile-app/android/.idea
+*.iml
+.DS_Store
+
+# React Native
+mobile-app/node_modules/
+mobile-app/.bundle/
+mobile-app/vendor/bundle
+
+# IDE
+.vscode/
+.idea/

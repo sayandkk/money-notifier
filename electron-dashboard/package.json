@@ -1,0 +1,30 @@
+{
+  "name": "upi-notification-monitor-desktop",
+  "version": "1.0.0",
+  "description": "Unified UPI Payment Notification Monitor Desktop Dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [
+    "upi",
+    "payment",
+    "monitor",
+    "google-pay",
+    "phonepe",
+    "paytm",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.3",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "electron": "^30.0.9"
+  }
+}

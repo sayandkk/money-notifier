@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UPI Payment Notification Monitor - Desktop Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Navigation / Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="app-brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+              <path d="M6 15h2"></path>
+              <path d="M10 15h4"></path>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-title">UPI Payment Monitor</span>
+            <span class="brand-subtitle">Unified Real-time Dashboard</span>
+          </div>
+        </div>
+        <div class="sync-status-pill" id="syncStatusPill" title="Server is listening for Android notifications">
+          <span class="pulse-dot"></span>
+          <span id="syncStatusText">Sync Server: Listening (Port 8999)</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Soundbox Toggle -->
+        <button class="icon-toggle-btn active" id="soundboxToggleBtn" title="Toggle Soundbox Voice Announcement">
+          <span class="soundbox-icon">🔊</span>
+          <span class="soundbox-label">Soundbox: <strong id="soundboxStatusText">ON</strong></span>
+        </button>
+
+        <!-- Test Simulator Button -->
+        <button class="btn btn-secondary" id="openSimulatorBtn">
+          <span class="btn-icon">⚡</span>
+          <span>Simulate Payment</span>
+        </button>
+
+        <!-- Connect Android Phone Button -->
+        <button class="btn btn-primary" id="openPairingBtn">
+          <span class="btn-icon">📱</span>
+          <span>Pair Phone</span>
+        </button>
+
+        <!-- Export CSV Button -->
+        <button class="btn btn-outline" id="exportCsvBtn" title="Export transactions to CSV">
+          <span class="btn-icon">📥</span>
+          <span>Export CSV</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-container">
+      <!-- Top Metrics & Statistics -->
+      <section class="metrics-grid">
+        <!-- Today's Received (Hero Card) -->
+        <div class="metric-card hero-metric">
+          <div class="metric-header">
+            <div class="metric-tag">TODAY'S RECEIVED</div>
+            <span class="metric-indicator live-indicator">● LIVE</span>
+          </div>
+          <div class="metric-value-container">
+            <span class="currency-symbol">₹</span>
+            <span class="hero-amount" id="todayAmount">0.00</span>
+          </div>
+          <div class="metric-footer">
+            <span class="stat-badge" id="todayCountBadge">0 Payments Today</span>
+            <span class="stat-meta" id="lastPaymentTime">Waiting for notifications...</span>
+          </div>
+        </div>
+
+        <!-- This Week -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <div class="metric-tag">THIS WEEK</div>
+            <span class="metric-icon">📅</span>
+          </div>
+          <div class="metric-value-container">
+            <span class="currency-symbol">₹</span>
+            <span class="metric-amount" id="weekAmount">0.00</span>
+          </div>
+          <div class="metric-footer">
+            <span class="stat-meta" id="weekCountBadge">0 payments</span>
+          </div>
+        </div>
+
+        <!-- This Month -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <div class="metric-tag">THIS MONTH</div>
+            <span class="metric-icon">📊</span>
+          </div>
+          <div class="metric-value-container">
+            <span class="currency-symbol">₹</span>
+            <span class="metric-amount" id="monthAmount">0.00</span>
+          </div>
+          <div class="metric-footer">
+            <span class="stat-meta" id="monthCountBadge">0 payments</span>
+          </div>
+        </div>
+
+        <!-- Accounts Tracked -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <div class="metric-tag">ACCOUNTS CREDITED</div>
+            <span class="metric-icon">🏦</span>
+          </div>
+          <div class="metric-value-container">
+            <span class="metric-amount" id="accountsCount">0</span>
+            <span class="metric-sublabel">Banks / Accounts</span>
+          </div>
+          <div class="metric-footer">
+            <span class="stat-meta" id="activeAccountsSummary">Auto-detected from alerts</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filter & Search Toolbar -->
+      <section class="toolbar-section">
+        <div class="toolbar-left">
+          <!-- Platform Filter Pills -->
+          <div class="platform-filter-group" id="platformFilters">
+            <button class="filter-chip active" data-platform="ALL">
+              <span>All Sources</span>
+              <span class="chip-count" id="countAll">0</span>
+            </button>
+            <button class="filter-chip chip-gpay" data-platform="GOOGLE_PAY">
+              <span class="chip-dot dot-gpay"></span>
+              <span>Google Pay</span>
+              <span class="chip-count" id="countGpay">0</span>
+            </button>
+            <button class="filter-chip chip-gpay-biz" data-platform="GOOGLE_PAY_BUSINESS">
+              <span class="chip-dot dot-gpay-biz"></span>
+              <span>GPay Business</span>
+              <span class="chip-count" id="countGpayBiz">0</span>
+            </button>
+            <button class="filter-chip chip-phonepe" data-platform="PHONEPE">
+              <span class="chip-dot dot-phonepe"></span>
+              <span>PhonePe</span>
+              <span class="chip-count" id="countPhonepe">0</span>
+            </button>
+            <button class="filter-chip chip-paytm" data-platform="PAYTM">
+              <span class="chip-dot dot-paytm"></span>
+              <span>Paytm</span>
+              <span class="chip-count" id="countPaytm">0</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <!-- Account Dropdown Filter -->
+          <div class="select-wrapper">
+            <select id="accountFilterSelect" class="styled-select" title="Filter by receiving account">
+              <option value="ALL">All Receiving Accounts</option>
+            </select>
+          </div>
+
+          <!-- Search Input -->
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Search person, amount, UTR..." aria-label="Search transactions">
+          </div>
+        </div>
+      </section>
+
+      <!-- Transactions Monitor Table -->
+      <section class="table-section">
+        <div class="table-card">
+          <div class="table-header-info">
+            <h2 class="section-title">Incoming Payment Stream</h2>
+            <div class="table-actions">
+              <span class="live-tag">REAL-TIME MONITOR</span>
+              <button class="btn-text" id="clearHistoryBtn" title="Clear table history">Clear Stream</button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="payment-table">
+              <thead>
+                <tr>
+                  <th scope="col" style="width: 130px;">TIME</th>
+                  <th scope="col" style="width: 170px;">PLATFORM</th>
+                  <th scope="col">SENDER (PERSON)</th>
+                  <th scope="col">CREDITED TO (ACCOUNT)</th>
+                  <th scope="col" style="width: 140px; text-align: right;">AMOUNT</th>
+                  <th scope="col" style="width: 110px; text-align: center;">STATUS</th>
+                  <th scope="col" style="width: 160px;">REFERENCE / UTR</th>
+                  <th scope="col" style="width: 80px; text-align: center;">DETAILS</th>
+                </tr>
+              </thead>
+              <tbody id="paymentTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Empty State -->
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🔔</div>
+            <h3>Waiting for Payment Notifications</h3>
+            <p>Connect your phone via the <strong>"Pair Phone"</strong> button or click <strong>"Simulate Payment"</strong> to test live incoming payments.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal 1: Pairing Phone with QR Code -->
+    <div class="modal-overlay" id="pairingModal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title">Pair Android Phone</h3>
+          <button class="modal-close-btn" id="closePairingModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="pairing-content">
+            <div class="qr-container">
+              <img id="pairingQrImg" alt="Pairing QR Code" src="" />
+              <span class="qr-caption">Scan with companion app or open URL</span>
+            </div>
+            <div class="pairing-instructions">
+              <h4>Direct Wi-Fi Synchronization</h4>
+              <p>Make sure your Android phone and this PC are connected to the same Wi-Fi network.</p>
+              
+              <div class="ip-info-box">
+                <span class="ip-label">Desktop Server IP:</span>
+                <code class="ip-code" id="desktopIpDisplay">Loading...</code>
+                <button class="copy-btn" id="copyIpBtn" title="Copy URL">Copy</button>
+              </div>
+
+              <div class="setup-steps">
+                <div class="step-item">
+                  <span class="step-num">1</span>
+                  <span>Install the <strong>UPI Monitor Android APK</strong> on your phone.</span>
+                </div>
+                <div class="step-item">
+                  <span class="step-num">2</span>
+                  <span>Grant <strong>Notification Access</strong> in Android settings.</span>
+                </div>
+                <div class="step-item">
+                  <span class="step-num">3</span>
+                  <span>Enter the Desktop Server IP shown above in the mobile app settings. All incoming GPay, PhonePe, Paytm, and GPay Business alerts will stream here in real-time!</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="pairingDoneBtn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Payment Simulator (Instant Testing) -->
+    <div class="modal-overlay" id="simulatorModal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title">⚡ Simulate Incoming Payment</h3>
+          <button class="modal-close-btn" id="closeSimulatorModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="simulator-intro">Inject realistic UPI payment notifications to verify platform badges, sender extraction, credited account detection, and soundbox voice announcements.</p>
+          
+          <div class="preset-buttons">
+            <button class="preset-btn" data-preset="gpay">Google Pay (₹500 from Rahul)</button>
+            <button class="preset-btn" data-preset="phonepe">PhonePe (₹1,000 from Anil)</button>
+            <button class="preset-btn" data-preset="paytm">Paytm (₹750 from Suresh)</button>
+            <button class="preset-btn" data-preset="gpay_biz">GPay Business (₹2,500 Customer)</button>
+          </div>
+
+          <form id="simulatorForm" class="simulator-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="simPlatform">Payment Platform</label>
+                <select id="simPlatform" class="form-control" required>
+                  <option value="GOOGLE_PAY">Google Pay</option>
+                  <option value="GOOGLE_PAY_BUSINESS">Google Pay for Business</option>
+                  <option value="PHONEPE">PhonePe</option>
+                  <option value="PAYTM">Paytm</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="simAmount">Amount (₹)</label>
+                <input type="number" id="simAmount" class="form-control" value="500" step="0.01" min="1" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="simSender">Sender / Customer Name</label>
+                <input type="text" id="simSender" class="form-control" value="Rahul Sharma" required />
+              </div>
+
+              <div class="form-group">
+                <label for="simAccount">Credited Account / Bank</label>
+                <input type="text" id="simAccount" class="form-control" value="State Bank of India (**4589)" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="simUtr">UPI Reference / UTR (Optional)</label>
+                <input type="text" id="simUtr" class="form-control" value="UPI4290182910" />
+              </div>
+
+              <div class="form-group">
+                <label for="simType">Transaction Type</label>
+                <select id="simType" class="form-control">
+                  <option value="CREDIT">CREDIT (Received)</option>
+                  <option value="DEBIT">DEBIT (Sent / Negative Test)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" id="simCancelBtn">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="simSubmitBtn">Trigger Notification Alert</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 3: Transaction Details -->
+    <div class="modal-overlay" id="detailsModal">
+      <div class="modal-box modal-box-sm">
+        <div class="modal-header">
+          <h3 class="modal-title">Payment Details</h3>
+          <button class="modal-close-btn" id="closeDetailsModalBtn">&times;</button>
+        </div>
+        <div class="modal-body" id="detailsModalBody">
+          <!-- Rendered dynamically -->
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="closeDetailsBtn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
