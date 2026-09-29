@@ -103,6 +103,8 @@ interface DebugNotif {
   timestamp: number;
 }
 
+type TimeRangeFilter = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL';
+
 export default function App(): React.JSX.Element {
   const systemColorScheme = useColorScheme();
   const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('system');
@@ -113,6 +115,9 @@ export default function App(): React.JSX.Element {
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [serverUrl, setServerUrl] = useState<string>('http://192.168.1.100:8999/api/payment');
   const [syncStatus, setSyncStatus] = useState<string>('Ready');
+  
+  // Filters
+  const [timeRange, setTimeRange] = useState<TimeRangeFilter>('TODAY'); // Default: Today
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
@@ -329,14 +334,31 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  // Calculations
-  const startOfToday = new Date().setHours(0, 0, 0, 0);
-  const todayPayments = payments.filter(p => p.receivedAt >= startOfToday && p.transactionType !== 'DEBIT');
-  const todayTotal = todayPayments.reduce((acc, curr) => acc + curr.amount, 0);
+  // Time Range Calculations
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  
+  // Start of current week (Monday)
+  const dayOfWeek = now.getDay();
+  const diffToMonday = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday).getTime();
+  
+  // Start of current month
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const isWithinTimeRange = (ts: number, range: TimeRangeFilter) => {
+    if (range === 'TODAY') return ts >= startOfToday;
+    if (range === 'WEEK') return ts >= startOfWeek;
+    if (range === 'MONTH') return ts >= startOfMonth;
+    return true; // 'ALL'
+  };
+
+  const periodPayments = payments.filter(p => isWithinTimeRange(p.receivedAt, timeRange) && p.transactionType !== 'DEBIT');
+  const periodTotal = periodPayments.reduce((acc, curr) => acc + curr.amount, 0);
 
   // Group by app for split bar
   const appTotals: Record<string, number> = {};
-  todayPayments.forEach(p => {
+  periodPayments.forEach(p => {
     const key = p.source === 'GOOGLE_PAY_BUSINESS' || p.source === 'GOOGLE_PAY'
       ? (p.source === 'GOOGLE_PAY_BUSINESS' ? 'GOOGLE_PAY_BUSINESS' : 'GOOGLE_PAY')
       : p.source === 'PHONEPE'
@@ -348,6 +370,9 @@ export default function App(): React.JSX.Element {
   });
 
   const filteredPayments = payments.filter(p => {
+    const timeMatch = isWithinTimeRange(p.receivedAt, timeRange);
+    if (!timeMatch) return false;
+
     if (selectedFilter === 'ALL') return true;
     if (selectedFilter === 'GOOGLE_PAY') return p.source === 'GOOGLE_PAY';
     if (selectedFilter === 'GOOGLE_PAY_BUSINESS') return p.source === 'GOOGLE_PAY_BUSINESS';
@@ -358,6 +383,26 @@ export default function App(): React.JSX.Element {
     }
     return true;
   });
+
+  const getPeriodLabel = () => {
+    switch (timeRange) {
+      case 'TODAY': return 'Received today';
+      case 'WEEK': return 'Received this week';
+      case 'MONTH': return 'Received this month';
+      case 'ALL': return 'Received all time';
+    }
+  };
+
+  const getPeriodCountText = () => {
+    const count = periodPayments.length;
+    const singular = count === 1 ? 'payment' : 'payments';
+    switch (timeRange) {
+      case 'TODAY': return `${count} ${singular} today`;
+      case 'WEEK': return `${count} ${singular} this week`;
+      case 'MONTH': return `${count} ${singular} this month`;
+      case 'ALL': return `${count} ${singular} all time`;
+    }
+  };
 
   const formatAmount = (num: number) => {
     return Number(num).toLocaleString('en-IN', {
@@ -461,7 +506,41 @@ export default function App(): React.JSX.Element {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
 
-        {/* Hero Card with Gradient & Split Bar */}
+        {/* Time Period Filter Selector (Default: Today) */}
+        <View style={[styles.timeSegmentContainer, { backgroundColor: theme.surface, borderColor: theme.line }]}>
+          {[
+            { id: 'TODAY', label: 'Today' },
+            { id: 'WEEK', label: 'This Week' },
+            { id: 'MONTH', label: 'This Month' },
+            { id: 'ALL', label: 'All Time' },
+          ].map(item => {
+            const isActive = timeRange === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.8}
+                style={[
+                  styles.timeSegmentBtn,
+                  isActive && [styles.timeSegmentBtnActive, { backgroundColor: theme.accent }],
+                ]}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setTimeRange(item.id as TimeRangeFilter);
+                }}>
+                <Text
+                  style={[
+                    styles.timeSegmentText,
+                    { color: isActive ? '#ffffff' : theme.muted },
+                    isActive && { fontWeight: '700' },
+                  ]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Hero Card with Dynamic Period Gradient & Split Bar */}
         <View style={[styles.heroCard, { backgroundColor: theme.hero1 }]}>
           {/* Top Status & Refresh Row */}
           <View style={styles.heroTopRow}>
@@ -506,23 +585,21 @@ export default function App(): React.JSX.Element {
 
           {/* Hero Amount Section */}
           <View style={styles.heroMain}>
-            <Text style={styles.heroLabel}>Received today</Text>
+            <Text style={styles.heroLabel}>{getPeriodLabel()}</Text>
             <View style={styles.heroAmountRow}>
               <Text style={styles.heroRupee}>₹</Text>
-              <Text style={styles.heroAmount}>{formatAmount(todayTotal)}</Text>
+              <Text style={styles.heroAmount}>{formatAmount(periodTotal)}</Text>
             </View>
-            <Text style={styles.heroCount}>
-              {todayPayments.length} {todayPayments.length === 1 ? 'payment' : 'payments'} today
-            </Text>
+            <Text style={styles.heroCount}>{getPeriodCountText()}</Text>
           </View>
 
           {/* Split Bar */}
-          {todayTotal > 0 && (
+          {periodTotal > 0 && (
             <View style={styles.splitBarContainer}>
               <View style={styles.splitBar}>
                 {Object.keys(appTotals).map((appKey, index) => {
                   const amt = appTotals[appKey];
-                  const widthPct = Math.max(3, (amt / todayTotal) * 100);
+                  const widthPct = Math.max(3, (amt / periodTotal) * 100);
                   const meta = APP_META[appKey] || APP_META.OTHER;
                   return (
                     <View
@@ -559,14 +636,14 @@ export default function App(): React.JSX.Element {
           )}
         </View>
 
-        {/* Filter Chips - Horizontal Scroll */}
+        {/* Platform Filter Chips - Horizontal Scroll */}
         <View style={styles.filterSection}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterScroll}>
             {[
-              { id: 'ALL', label: 'All' },
+              { id: 'ALL', label: 'All Apps' },
               { id: 'GOOGLE_PAY', label: 'GPay' },
               { id: 'GOOGLE_PAY_BUSINESS', label: 'GPay Biz' },
               { id: 'PHONEPE', label: 'PhonePe' },
@@ -645,7 +722,7 @@ export default function App(): React.JSX.Element {
           {filteredPayments.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.line }]}>
               <Text style={[styles.emptyText, { color: theme.muted }]}>
-                No payments from this filter yet. New ones appear here as they arrive.
+                No payments for this period or filter yet. New ones appear here as they arrive.
               </Text>
             </View>
           ) : (
@@ -973,6 +1050,31 @@ const styles = StyleSheet.create({
     maxWidth: 460,
     width: '100%',
     alignSelf: 'center',
+  },
+  timeSegmentContainer: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  timeSegmentBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeSegmentBtnActive: {
+    elevation: 2,
+    shadowColor: '#4F5BFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  timeSegmentText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   heroCard: {
     borderRadius: 26,
