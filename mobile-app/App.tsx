@@ -471,9 +471,13 @@ export default function App(): React.JSX.Element {
       {/* Screen Header */}
       <View style={[styles.header, { backgroundColor: theme.bg }]}>
         <View style={styles.headerLeftRow}>
-          {/* New App Logo Badge */}
-          <View style={[styles.brandLogoBox, { backgroundColor: activeTheme === 'dark' ? '#1e293b' : '#E6E8FF' }]}>
-            <Text style={styles.brandLogoIcon}>⚡</Text>
+          {/* Khanak Logo Badge */}
+          <View style={styles.brandLogoBox}>
+            <Text style={styles.brandRupeeIcon}>₹</Text>
+            <View style={styles.waveGroup}>
+              <View style={styles.wave1} />
+              <View style={styles.wave2} />
+            </View>
           </View>
           <View style={styles.headerTitleGroup}>
             <Text style={[styles.screenTitle, { color: theme.text }]}>UPI Payment Monitor</Text>
@@ -1048,16 +1052,52 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   brandLogoBox: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
+    backgroundColor: '#5B6CFF',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(79, 91, 255, 0.25)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#5B6CFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  brandLogoIcon: {
+  brandRupeeIcon: {
+    color: '#FFFFFF',
     fontSize: 20,
+    fontWeight: '800',
+    marginRight: 1,
+  },
+  waveGroup: {
+    width: 8,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  wave1: {
+    width: 5,
+    height: 10,
+    borderRightWidth: 2,
+    borderColor: '#FFFFFF',
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
+    opacity: 0.95,
+  },
+  wave2: {
+    position: 'absolute',
+    left: 3,
+    width: 6,
+    height: 16,
+    borderRightWidth: 2,
+    borderColor: '#FFFFFF',
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    opacity: 0.6,
   },
   headerTitleGroup: {
     flex: 1,

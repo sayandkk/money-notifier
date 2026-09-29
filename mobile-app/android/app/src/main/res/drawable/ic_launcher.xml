@@ -1,15 +1,53 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Khanak Logo Gradient Background -->
     <path
-        android:fillColor="#10B981"
-        android:pathData="M0,0h108v108h-108z" />
+        android:fillColor="#5B6CFF"
+        android:pathData="M0,0h512v512h-512z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,38h48v32h-48z" />
+        android:fillColor="#7A2FE0"
+        android:pathData="M0,256L256,512L512,512L512,256Z" />
+
+    <!-- Rupee Top Bars -->
     <path
-        android:fillColor="#0B0F19"
-        android:pathData="M30,46h48v6h-48z" />
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M116,176 L288,176" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M116,232 L288,232" />
+
+    <!-- Rupee Body & Slanted Leg -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M142,176 L210,176 C242,176 268,202 268,234 C268,266 242,292 210,292 L142,292 L274,392" />
+
+    <!-- Soundwave 1 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="24"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.95"
+        android:pathData="M372,196 C390,236 390,276 372,316" />
+
+    <!-- Soundwave 2 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="24"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.6"
+        android:pathData="M410,152 C448,222 448,290 410,360" />
 </vector>
