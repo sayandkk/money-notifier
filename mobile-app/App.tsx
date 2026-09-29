@@ -26,7 +26,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const { NotificationModule } = NativeModules;
 const eventEmitter = NotificationModule ? new NativeEventEmitter(NotificationModule) : null;
 
-// Design Tokens (Light Theme Default, Dark Theme supported)
+// Design Tokens (Light Theme & Dark Theme)
 const TOKENS = {
   light: {
     bg: '#F3F5FA',
@@ -107,8 +107,8 @@ type TimeRangeFilter = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL';
 
 export default function App(): React.JSX.Element {
   const systemColorScheme = useColorScheme();
-  const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('system');
-  const activeTheme = themeMode === 'system' ? (systemColorScheme === 'dark' ? 'dark' : 'light') : themeMode;
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('dark');
+  const activeTheme = themeMode;
   const theme = TOKENS[activeTheme];
 
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -196,6 +196,11 @@ export default function App(): React.JSX.Element {
     };
   }, []);
 
+  const toggleTheme = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setThemeMode(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   const checkVoiceStatus = async () => {
     if (NotificationModule?.isVoiceEnabled) {
       try {
@@ -243,7 +248,7 @@ export default function App(): React.JSX.Element {
         if (list.length > 0) {
           setPayments(list);
         } else {
-          // Default initial examples matching spec
+          // Default initial examples
           setPayments([
             {
               id: 'demo_1',
@@ -441,7 +446,6 @@ export default function App(): React.JSX.Element {
       const amt = Math.round(p.amount);
       const meta = getMeta(p.source);
       const name = p.senderName && p.senderName !== 'Unknown Sender' ? p.senderName : 'Customer';
-      // As per spec: "{App} received {amount} rupees from {name}"
       const text = `${meta.label} received ${amt} rupees from ${name}`;
       NotificationModule.speakPaymentAnnouncement(text);
     }
@@ -466,11 +470,34 @@ export default function App(): React.JSX.Element {
 
       {/* Screen Header */}
       <View style={[styles.header, { backgroundColor: theme.bg }]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.screenTitle, { color: theme.text }]}>Payment monitor</Text>
-          <Text style={[styles.screenSubtitle, { color: theme.muted }]}>GPay, PhonePe, Paytm and more</Text>
+        <View style={styles.headerLeftRow}>
+          {/* New App Logo Badge */}
+          <View style={[styles.brandLogoBox, { backgroundColor: activeTheme === 'dark' ? '#1e293b' : '#E6E8FF' }]}>
+            <Text style={styles.brandLogoIcon}>⚡</Text>
+          </View>
+          <View style={styles.headerTitleGroup}>
+            <Text style={[styles.screenTitle, { color: theme.text }]}>UPI Payment Monitor</Text>
+            <Text style={[styles.screenSubtitle, { color: theme.muted }]}>Unified Notification Listener</Text>
+          </View>
         </View>
+        
         <View style={styles.headerActions}>
+          {/* Theme Switcher Toggle (Light ☀️ / Dark 🌙) */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[
+              styles.iconButton,
+              {
+                backgroundColor: activeTheme === 'dark' ? theme.surface2 : '#ffffff',
+                borderColor: theme.line,
+              },
+            ]}
+            onPress={toggleTheme}>
+            <Text style={styles.iconGlyph}>
+              {activeTheme === 'dark' ? '☀️' : '🌙'}
+            </Text>
+          </TouchableOpacity>
+
           {/* Voice Toggle Button */}
           <TouchableOpacity
             activeOpacity={0.8}
@@ -1005,7 +1032,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 16,
     paddingBottom: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1014,33 +1041,51 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
-  headerLeft: {
+  headerLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  brandLogoBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 91, 255, 0.25)',
+  },
+  brandLogoIcon: {
+    fontSize: 20,
+  },
+  headerTitleGroup: {
     flex: 1,
   },
   screenTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
   },
   screenSubtitle: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: '400',
-    marginTop: 2,
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   iconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconGlyph: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   scrollContent: {
