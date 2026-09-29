@@ -18,8 +18,8 @@ class PaytmParser : PaymentSourceParser {
             Pattern.compile("(?i)(?:received from|from|by)\\s+([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:in|to|via|on|credited|ref|using|\\()|$)"),
             Pattern.compile("(?i)money received.*?(?:from\\s+)?([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:in|to|via|on|credited|ref|using|\\()|$)"),
             Pattern.compile("(?i)received payment of.*?(?:from\\s+)?([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:in|to|via|on|credited|ref|using|\\()|$)"),
-            Pattern.compile("(?i)you have received\s+(?:a payment of\s+)?(?:₹|\u20B9|INR|Rs\\.?)\s*[0-9,.]+\s+from\s+([a-zA-Z0-9\\s.'-]+)"),
-            Pattern.compile("(?i)^([a-zA-Z0-9\\s.'-]+?)\s+(?:has\s+)?(?:sent|paid)\s+(?:you\s+)?(?:₹|\u20B9|INR|Rs\\.?)")
+            Pattern.compile("(?i)you have received\\s+(?:a payment of\\s+)?(?:₹|\u20B9|INR|Rs\\.?)\\s*[0-9,.]+\\s+from\\s+([a-zA-Z0-9\\s.'-]+)"),
+            Pattern.compile("(?i)^([a-zA-Z0-9\\s.'-]+?)\\s+(?:has\\s+)?(?:sent|paid)\\s+(?:you\\s+)?(?:₹|\u20B9|INR|Rs\\.?)")
         )
     }
 
