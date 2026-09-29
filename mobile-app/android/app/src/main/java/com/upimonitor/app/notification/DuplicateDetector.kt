@@ -1,12 +1,11 @@
 package com.upimonitor.app.notification
 
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 object DuplicateDetector {
 
     private const val DEFAULT_WINDOW_MS = 180_000L // 3 minutes
-
-    private data class Entry(val hash: String, val timestamp: Long)
 
     private val cache = ConcurrentHashMap<String, Long>()
 
@@ -20,11 +19,15 @@ object DuplicateDetector {
     ): Boolean {
         cleanupOldEntries(timestamp)
 
-        val key = buildString {
-            append(source.name).append("|")
-            append(String.format("%.2f", amount)).append("|")
-            append(sender?.trim()?.lowercase() ?: "").append("|")
-            append(ref?.trim() ?: "")
+        // If UTR / Ref is available, key on source + ref
+        val key = if (!ref.isNullOrBlank()) {
+            "${source.name}|REF|${ref.trim()}"
+        } else {
+            buildString {
+                append(source.name).append("|")
+                append(String.format(Locale.US, "%.2f", amount)).append("|")
+                append(sender?.trim()?.lowercase() ?: "")
+            }
         }
 
         val lastSeen = cache[key]

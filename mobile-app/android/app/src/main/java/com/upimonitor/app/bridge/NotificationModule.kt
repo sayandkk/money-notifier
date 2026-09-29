@@ -9,7 +9,6 @@ import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.gson.Gson
 import com.upimonitor.app.notification.*
-import com.upimonitor.app.notification.providers.GooglePayBusinessParser
 
 class NotificationModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -30,6 +29,7 @@ class NotificationModule(private val reactContext: ReactApplicationContext) :
 
     init {
         reactContextInstance = reactContext
+        VoiceSpeaker.init(reactContext)
     }
 
     override fun getName(): String = NAME
@@ -114,6 +114,23 @@ class NotificationModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setVoiceEnabled(enabled: Boolean, promise: Promise) {
+        VoiceSpeaker.isVoiceEnabled = enabled
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun isVoiceEnabled(promise: Promise) {
+        promise.resolve(VoiceSpeaker.isVoiceEnabled)
+    }
+
+    @ReactMethod
+    fun speakPaymentAnnouncement(text: String, promise: Promise) {
+        VoiceSpeaker.speak(text)
+        promise.resolve(true)
+    }
+
+    @ReactMethod
     fun simulatePayment(
         platformStr: String,
         amount: Double,
@@ -144,8 +161,16 @@ class NotificationModule(private val reactContext: ReactApplicationContext) :
                 confidence = 1.0f
             )
 
+            // Save locally in device storage
             PaymentNotificationListener.savePayment(reactContext, mockPayment)
+
+            // Voice announcement aloud on mobile device
+            VoiceSpeaker.speakPayment(mockPayment)
+
+            // Broadcast to UI
             emitPaymentReceived(mockPayment)
+
+            // Sync to Desktop
             syncManager.syncPayment(mockPayment)
 
             promise.resolve(true)

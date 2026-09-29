@@ -99,8 +99,15 @@ function speakPayment(payment) {
       window.speechSynthesis.cancel();
       const amountStr = Math.round(payment.amount).toString();
       const platformName = getPlatformFriendlyName(payment.source);
-      const sender = payment.senderName && payment.senderName !== 'Unknown Sender' ? `from ${payment.senderName}` : '';
-      const text = `${amountStr} rupees received on ${platformName} ${sender}`;
+      const hasSender = payment.senderName &&
+        payment.senderName !== 'Unknown Sender' &&
+        payment.senderName !== 'UPI Sender' &&
+        payment.senderName !== 'Business Customer' &&
+        payment.senderName !== 'Google Pay User' &&
+        payment.senderName !== 'PhonePe User' &&
+        payment.senderName !== 'Paytm User';
+      const sender = hasSender ? `by ${payment.senderName}` : '';
+      const text = `Rupees ${amountStr} received on ${platformName} ${sender}`.trim();
       
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;

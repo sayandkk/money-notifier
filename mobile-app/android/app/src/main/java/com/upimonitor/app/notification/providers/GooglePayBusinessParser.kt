@@ -8,12 +8,15 @@ class GooglePayBusinessParser : PaymentSourceParser {
     companion object {
         val SUPPORTED_PACKAGES = mutableSetOf(
             "com.google.android.apps.nbu.paisa.merchant",
-            "com.google.android.apps.business.payment"
+            "com.google.android.apps.business.payment",
+            "com.google.android.apps.nbu.paisa.business",
+            "com.google.android.apps.gpay.merchant"
         )
 
         private val CUSTOMER_PATTERNS = listOf(
-            Pattern.compile("(?i)(?:from|by|customer)\\s+([a-zA-Z0-9\\s.'-]+?)(?:\\s+to|\\s+via|\\s+on|\\s+ref|$)"),
-            Pattern.compile("(?i)received from\\s+([a-zA-Z0-9\\s.'-]+)")
+            Pattern.compile("(?i)(?:from|by|customer)\\s+([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:credited|to|via|on|ref|using|\\()|$)"),
+            Pattern.compile("(?i)received from\\s+([a-zA-Z0-9\\s.'-]+)"),
+            Pattern.compile("(?i)payment of\\s+(?:₹|\u20B9|INR|Rs\\.?)\\s*[0-9,.]+\\s+from\\s+([a-zA-Z0-9\\s.'-]+)")
         )
     }
 
@@ -22,9 +25,10 @@ class GooglePayBusinessParser : PaymentSourceParser {
     }
 
     override fun canParse(packageName: String, notification: NotificationData): Boolean {
-        if (SUPPORTED_PACKAGES.contains(packageName.lowercase())) return true
+        val pkg = packageName.lowercase().trim()
+        if (SUPPORTED_PACKAGES.contains(pkg)) return true
         val combined = notification.getCombinedText().lowercase()
-        return (packageName.contains("paisa.merchant") || packageName.contains("business")) &&
+        return (pkg.contains("paisa.merchant") || pkg.contains("business.payment") || (pkg.contains("business") && pkg.contains("google"))) &&
                 ParserUtils.isIncomingPayment(combined)
     }
 
@@ -33,7 +37,7 @@ class GooglePayBusinessParser : PaymentSourceParser {
         if (!ParserUtils.isIncomingPayment(combined)) return null
 
         val amount = ParserUtils.extractAmount(combined) ?: return null
-        val customerName = extractCustomerName(combined)
+        val customerName = extractCustomerName(notification.text, notification.title, combined)
         val targetAccount = TargetAccountExtractor.extractAccount(combined)
         val utr = ParserUtils.extractReference(combined)
 
@@ -54,7 +58,24 @@ class GooglePayBusinessParser : PaymentSourceParser {
         )
     }
 
-    private fun extractCustomerName(combined: String): String? {
+    private fun extractCustomerName(text: String, title: String, combined: String): String? {
+        for (pattern in CUSTOMER_PATTERNS) {
+            val matcher = pattern.matcher(text)
+            if (matcher.find()) {
+                val candidate = ParserUtils.cleanSenderName(matcher.group(1))
+                if (candidate != null) return candidate
+            }
+        }
+
+        if (title.isNotBlank() &&
+            !title.contains("Google Pay", ignoreCase = true) &&
+            !title.contains("Business", ignoreCase = true) &&
+            !title.contains("Payment", ignoreCase = true)
+        ) {
+            val fromTitle = ParserUtils.cleanSenderName(title)
+            if (fromTitle != null) return fromTitle
+        }
+
         for (pattern in CUSTOMER_PATTERNS) {
             val matcher = pattern.matcher(combined)
             if (matcher.find()) {

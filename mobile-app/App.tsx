@@ -46,6 +46,8 @@ export default function App(): React.JSX.Element {
   const [syncStatus, setSyncStatus] = useState<string>('Ready');
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
 
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+
   // Modals
   const [syncModalVisible, setSyncModalVisible] = useState<boolean>(false);
   const [debugModalVisible, setDebugModalVisible] = useState<boolean>(false);
@@ -55,6 +57,7 @@ export default function App(): React.JSX.Element {
     checkPermission();
     loadStoredPayments();
     loadServerUrl();
+    checkVoiceStatus();
 
     // Listen to live payments from Android NotificationListenerService
     let subscription: any = null;
@@ -73,6 +76,28 @@ export default function App(): React.JSX.Element {
       if (subscription) subscription.remove();
     };
   }, []);
+
+  const checkVoiceStatus = async () => {
+    if (NotificationModule?.isVoiceEnabled) {
+      try {
+        const enabled = await NotificationModule.isVoiceEnabled();
+        setVoiceEnabled(enabled);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const toggleVoice = async () => {
+    if (NotificationModule?.setVoiceEnabled) {
+      const next = !voiceEnabled;
+      await NotificationModule.setVoiceEnabled(next);
+      setVoiceEnabled(next);
+      if (next) {
+        NotificationModule.speakPaymentAnnouncement('Soundbox voice announcement enabled');
+      }
+    }
+  };
 
   const checkPermission = async () => {
     if (NotificationModule?.isNotificationAccessGranted) {
@@ -207,6 +232,11 @@ export default function App(): React.JSX.Element {
       case 'GOOGLE_PAY_BUSINESS': return '#10b981';
       case 'PHONEPE': return '#9333ea';
       case 'PAYTM': return '#06b6d4';
+      case 'BHIM': return '#f97316';
+      case 'CRED': return '#ec4899';
+      case 'AMAZON_PAY': return '#eab308';
+      case 'NAVI': return '#14b8a6';
+      case 'BANK_UPI': return '#8b5cf6';
       default: return '#64748b';
     }
   };
@@ -222,6 +252,11 @@ export default function App(): React.JSX.Element {
           <Text style={styles.headerSubtitle}>Unified Notification Listener</Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.headerBtn, voiceEnabled ? { backgroundColor: '#10b981' } : { backgroundColor: '#374151' }]}
+            onPress={toggleVoice}>
+            <Text style={styles.headerBtnText}>{voiceEnabled ? '🔊 Voice: ON' : '🔇 Voice: OFF'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.headerBtn} onPress={() => setSyncModalVisible(true)}>
             <Text style={styles.headerBtnText}>💻 Sync</Text>
           </TouchableOpacity>
@@ -240,8 +275,8 @@ export default function App(): React.JSX.Element {
             </Text>
             <Text style={styles.permDesc}>
               {hasPermission
-                ? 'Listening to GPay, PhonePe, Paytm, and GPay Business notifications'
-                : 'Grant permission to automatically detect incoming payments'}
+                ? 'Listening to GPay, PhonePe, Paytm, and GPay Business notifications with Voice Soundbox'
+                : 'Grant permission to automatically detect incoming payments and speak alerts'}
             </Text>
           </View>
           <TouchableOpacity
@@ -262,7 +297,7 @@ export default function App(): React.JSX.Element {
 
         {/* Platform Filters */}
         <View style={styles.filterRow}>
-          {['ALL', 'GOOGLE_PAY', 'GOOGLE_PAY_BUSINESS', 'PHONEPE', 'PAYTM'].map(filterKey => {
+          {['ALL', 'GOOGLE_PAY', 'GOOGLE_PAY_BUSINESS', 'PHONEPE', 'PAYTM', 'OTHER'].map(filterKey => {
             const isSelected = selectedFilter === filterKey;
             const label = filterKey === 'ALL'
               ? 'All'
@@ -272,7 +307,9 @@ export default function App(): React.JSX.Element {
               ? 'GPay Biz'
               : filterKey === 'PHONEPE'
               ? 'PhonePe'
-              : 'Paytm';
+              : filterKey === 'PAYTM'
+              ? 'Paytm'
+              : 'Other UPI';
 
             return (
               <TouchableOpacity
@@ -289,16 +326,16 @@ export default function App(): React.JSX.Element {
 
         {/* Quick Test Bar */}
         <View style={styles.quickTestBar}>
-          <Text style={styles.quickTestLabel}>Quick Test:</Text>
+          <Text style={styles.quickTestLabel}>Quick Voice Test:</Text>
+          <TouchableOpacity
+            style={[styles.testBtn, { backgroundColor: '#9333ea' }]}
+            onPress={() => triggerTestSimulation('PHONEPE', 500, 'Rahul', 'Primary Bank A/c')}>
+            <Text style={styles.testBtnText}>🔊 ₹500 PhonePe (Rahul)</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.testBtn}
             onPress={() => triggerTestSimulation('GOOGLE_PAY', 500, 'Rahul', 'SBI A/c 4589')}>
             <Text style={styles.testBtnText}>+ ₹500 GPay</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.testBtn}
-            onPress={() => triggerTestSimulation('PHONEPE', 1000, 'Anil', 'HDFC A/c 1234')}>
-            <Text style={styles.testBtnText}>+ ₹1,000 PhonePe</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.testBtn}

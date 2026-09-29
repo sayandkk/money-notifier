@@ -78,10 +78,11 @@ class PaymentNotificationListener : NotificationListenerService() {
 
     private val parsers: List<PaymentSourceParser> by lazy {
         listOf(
-            GooglePayParser(),
             GooglePayBusinessParser(),
+            GooglePayParser(),
             PhonePeParser(),
-            PaytmParser()
+            PaytmParser(),
+            GenericUpiParser()
         )
     }
 
@@ -91,12 +92,14 @@ class PaymentNotificationListener : NotificationListenerService() {
         super.onCreate()
         isServiceRunning = true
         syncManager = SyncManager(applicationContext)
+        VoiceSpeaker.init(applicationContext)
         Log.i(TAG, "PaymentNotificationListener Service Started")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         isServiceRunning = false
+        VoiceSpeaker.shutdown()
         Log.i(TAG, "PaymentNotificationListener Service Destroyed")
     }
 
@@ -129,12 +132,17 @@ class PaymentNotificationListener : NotificationListenerService() {
 
         // Run through payment parsers
         for (parser in parsers) {
-            if (parser.canParse(packageName, notificationData)) {
-                val parsed = parser.parse(notificationData)
-                if (parsed != null && parsed.transactionType == TransactionType.CREDIT) {
-                    handleIncomingPayment(parsed)
-                    break
+            try {
+                if (parser.canParse(packageName, notificationData)) {
+                    val parsed = parser.parse(notificationData)
+                    if (parsed != null && parsed.transactionType == TransactionType.CREDIT) {
+                        Log.i(TAG, "Successfully parsed with ${parser::class.simpleName}: ₹${parsed.amount} from ${parsed.senderName}")
+                        handleIncomingPayment(parsed)
+                        break
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in parser ${parser::class.simpleName}: ${e.message}", e)
             }
         }
     }
@@ -159,10 +167,13 @@ class PaymentNotificationListener : NotificationListenerService() {
         // 1. Save locally in device storage
         savePayment(applicationContext, payment)
 
-        // 2. Broadcast live event to React Native UI
+        // 2. Play Soundbox Voice Announcement aloud on phone
+        VoiceSpeaker.speakPayment(payment)
+
+        // 3. Broadcast live event to React Native UI
         NotificationModule.emitPaymentReceived(payment)
 
-        // 3. Sync to Desktop Electron App
+        // 4. Sync to Desktop Electron App
         syncManager.syncPayment(payment) { success, error ->
             if (success) {
                 Log.d(TAG, "Payment successfully synced to Electron desktop")

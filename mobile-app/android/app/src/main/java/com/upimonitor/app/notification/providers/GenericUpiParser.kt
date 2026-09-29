@@ -3,18 +3,11 @@ package com.upimonitor.app.notification.providers
 import com.upimonitor.app.notification.*
 import java.util.regex.Pattern
 
-class PhonePeParser : PaymentSourceParser {
+class GenericUpiParser : PaymentSourceParser {
 
     companion object {
-        val SUPPORTED_PACKAGES = setOf(
-            "com.phonepe.app",
-            "com.phonepe.app.business",
-            "com.phonepe.merchant",
-            "com.phonepe.simulator"
-        )
-
         private val SENDER_PATTERNS = listOf(
-            Pattern.compile("(?i)(?:received from|from|by)\\s+([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:credited|in|to|via|on|ref|using|\\()|$)"),
+            Pattern.compile("(?i)(?:received from|from|by|sent by)\\s+([a-zA-Z0-9\\s.'-]+?)(?:\\s+(?:credited|in|to|via|on|ref|using|\\()|$)"),
             Pattern.compile("(?i)payment of\\s+(?:₹|\u20B9|INR|Rs\\.?)\\s*[0-9,.]+\\s+(?:received )?from\\s+([a-zA-Z0-9\\s.'-]+)"),
             Pattern.compile("(?i)you have received\\s+(?:a payment of\\s+)?(?:₹|\u20B9|INR|Rs\\.?)\\s*[0-9,.]+\\s+from\\s+([a-zA-Z0-9\\s.'-]+)"),
             Pattern.compile("(?i)^([a-zA-Z0-9\\s.'-]+?)\\s+(?:has\\s+)?(?:sent|paid)\\s+(?:you\\s+)?(?:₹|\u20B9|INR|Rs\\.?)")
@@ -22,12 +15,30 @@ class PhonePeParser : PaymentSourceParser {
     }
 
     override fun canParse(packageName: String, notification: NotificationData): Boolean {
-        val pkg = packageName.lowercase().trim()
-        if (SUPPORTED_PACKAGES.contains(pkg)) return true
-        if (pkg.contains("phonepe")) return true
-
         val combined = notification.getCombinedText().lowercase()
-        return combined.contains("phonepe") && ParserUtils.isIncomingPayment(combined)
+        val pkg = packageName.lowercase()
+
+        // Match known UPI/Bank packages or any notification that contains incoming payment keywords
+        val isUpiPackage = pkg.contains("bhim") ||
+                pkg.contains("npci") ||
+                pkg.contains("cred") ||
+                pkg.contains("amazon") ||
+                pkg.contains("navi") ||
+                pkg.contains("bank") ||
+                pkg.contains("messaging") ||
+                pkg.contains("mms") ||
+                pkg.contains("sms") ||
+                pkg.contains("whatsapp")
+
+        val hasUpiIndicators = combined.contains("upi") ||
+                combined.contains("vpa") ||
+                combined.contains("credited") ||
+                combined.contains("received") ||
+                combined.contains("inr") ||
+                combined.contains("rs.") ||
+                combined.contains("₹")
+
+        return (isUpiPackage || hasUpiIndicators) && ParserUtils.isIncomingPayment(combined)
     }
 
     override fun parse(notification: NotificationData): ParsedPayment? {
@@ -35,6 +46,7 @@ class PhonePeParser : PaymentSourceParser {
         if (!ParserUtils.isIncomingPayment(combined)) return null
 
         val amount = ParserUtils.extractAmount(combined) ?: return null
+        val (source, sourceApp) = identifySource(notification.packageName, combined)
         val sender = extractSender(notification.text, notification.title, combined)
         val targetAccount = TargetAccountExtractor.extractAccount(combined)
         val utr = ParserUtils.extractReference(combined)
@@ -43,21 +55,40 @@ class PhonePeParser : PaymentSourceParser {
             id = ParserUtils.generatePaymentId(),
             amount = amount,
             currency = "INR",
-            senderName = sender ?: "PhonePe User",
-            targetAccount = targetAccount ?: "Primary Bank Account",
-            source = PaymentSource.PHONEPE,
-            sourceApp = "PhonePe",
+            senderName = sender ?: "UPI Sender",
+            targetAccount = targetAccount ?: "Bank Account",
+            source = source,
+            sourceApp = sourceApp,
             transactionType = TransactionType.CREDIT,
             transactionReference = utr,
             receivedAt = notification.timestamp,
             rawTitle = notification.title,
             rawText = notification.text,
-            confidence = 1.0f
+            confidence = 0.9f
         )
     }
 
+    private fun identifySource(packageName: String, combined: String): Pair<PaymentSource, String> {
+        val pkg = packageName.lowercase()
+        val text = combined.lowercase()
+
+        return when {
+            pkg.contains("bhim") || pkg.contains("npci") || text.contains("bhim") ->
+                Pair(PaymentSource.BHIM, "BHIM UPI")
+            pkg.contains("cred") || text.contains("cred") ->
+                Pair(PaymentSource.CRED, "CRED")
+            pkg.contains("amazon") || text.contains("amazon pay") ->
+                Pair(PaymentSource.AMAZON_PAY, "Amazon Pay")
+            pkg.contains("navi") || text.contains("navi") ->
+                Pair(PaymentSource.NAVI, "Navi")
+            pkg.contains("bank") || text.contains("bank") || text.contains("a/c") || text.contains("account") ->
+                Pair(PaymentSource.BANK_UPI, "Bank Alert")
+            else ->
+                Pair(PaymentSource.OTHER, "UPI Payment")
+        }
+    }
+
     private fun extractSender(text: String, title: String, combined: String): String? {
-        // 1. Try patterns on notification text first
         for (pattern in SENDER_PATTERNS) {
             val matcher = pattern.matcher(text)
             if (matcher.find()) {
@@ -66,19 +97,17 @@ class PhonePeParser : PaymentSourceParser {
             }
         }
 
-        // 2. Check if notification title is sender name
         if (title.isNotBlank() &&
-            !title.contains("PhonePe", ignoreCase = true) &&
             !title.contains("Payment", ignoreCase = true) &&
+            !title.contains("Alert", ignoreCase = true) &&
             !title.contains("Received", ignoreCase = true) &&
-            !title.contains("Money", ignoreCase = true) &&
-            !title.contains("Alert", ignoreCase = true)
+            !title.contains("Bank", ignoreCase = true) &&
+            !title.contains("UPI", ignoreCase = true)
         ) {
             val fromTitle = ParserUtils.cleanSenderName(title)
             if (fromTitle != null) return fromTitle
         }
 
-        // 3. Try patterns on combined text
         for (pattern in SENDER_PATTERNS) {
             val matcher = pattern.matcher(combined)
             if (matcher.find()) {
