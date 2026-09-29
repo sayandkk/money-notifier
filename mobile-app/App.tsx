@@ -53,6 +53,10 @@ export default function App(): React.JSX.Element {
   const [debugModalVisible, setDebugModalVisible] = useState<boolean>(false);
   const [debugList, setDebugList] = useState<DebugNotif[]>([]);
 
+  // Selected Transaction for Details Modal
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [detailsModalVisible, setDetailsModalVisible] = useState<boolean>(false);
+
   useEffect(() => {
     checkPermission();
     loadStoredPayments();
@@ -221,9 +225,35 @@ export default function App(): React.JSX.Element {
     });
   };
 
-  const formatTime = (ts: number) => {
+  const formatFullDateTime = (ts: number) => {
     const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    const dateStr = d.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+    const timeStr = d.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+    return `${dateStr} at ${timeStr}`;
+  };
+
+  const playVoiceForPayment = (p: Payment) => {
+    if (NotificationModule?.speakPaymentAnnouncement) {
+      const amt = Math.round(p.amount);
+      const appName = p.sourceApp || p.source;
+      const sender = p.senderName && p.senderName !== 'Unknown Sender' ? `by ${p.senderName}` : '';
+      const text = `Rupees ${amt} received on ${appName} ${sender}`.trim();
+      NotificationModule.speakPaymentAnnouncement(text);
+    }
+  };
+
+  const openPaymentDetails = (p: Payment) => {
+    setSelectedPayment(p);
+    setDetailsModalVisible(true);
   };
 
   const getSourceBadgeColor = (source: string) => {
@@ -357,14 +387,21 @@ export default function App(): React.JSX.Element {
             </View>
           ) : (
             filteredPayments.map(item => (
-              <View key={item.id} style={styles.paymentCard}>
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.75}
+                style={styles.paymentCard}
+                onPress={() => openPaymentDetails(item)}>
                 <View style={styles.cardTopRow}>
                   <View style={[styles.platformBadge, { backgroundColor: getSourceBadgeColor(item.source) + '22', borderColor: getSourceBadgeColor(item.source) + '55' }]}>
                     <Text style={[styles.platformBadgeText, { color: getSourceBadgeColor(item.source) }]}>
                       {item.sourceApp || item.source}
                     </Text>
                   </View>
-                  <Text style={styles.cardTime}>{formatTime(item.receivedAt)}</Text>
+                  <View style={styles.cardTimeRow}>
+                    <Text style={styles.cardTime}>{formatTime(item.receivedAt)}</Text>
+                    <Text style={styles.cardTapHint}>ℹ️ Details</Text>
+                  </View>
                 </View>
 
                 <View style={styles.cardMainRow}>
@@ -384,11 +421,93 @@ export default function App(): React.JSX.Element {
                     <Text style={styles.refText}>Ref / UTR: {item.transactionReference}</Text>
                   </View>
                 ) : null}
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
       </ScrollView>
+
+      {/* Payment Details Modal */}
+      <Modal visible={detailsModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.detailsModalBox]}>
+            {selectedPayment && (
+              <>
+                <View style={styles.detailsHeader}>
+                  <View style={[styles.platformBadge, { backgroundColor: getSourceBadgeColor(selectedPayment.source) + '22', borderColor: getSourceBadgeColor(selectedPayment.source) + '66' }]}>
+                    <Text style={[styles.platformBadgeText, { color: getSourceBadgeColor(selectedPayment.source) }]}>
+                      {selectedPayment.sourceApp || selectedPayment.source}
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={styles.detailsCloseX} onPress={() => setDetailsModalVisible(false)}>
+                    <Text style={styles.detailsCloseXText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Amount Header Banner */}
+                <View style={styles.detailsAmountBanner}>
+                  <Text style={styles.detailsAmountLabel}>PAYMENT RECEIVED</Text>
+                  <Text style={styles.detailsAmountText}>+ ₹{formatAmount(selectedPayment.amount)}</Text>
+                  <View style={styles.detailsStatusBadge}>
+                    <Text style={styles.detailsStatusText}>● CREDITED (SUCCESS)</Text>
+                  </View>
+                </View>
+
+                {/* Detail Information Rows */}
+                <ScrollView style={styles.detailsListScroll}>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>👤 Sender / Person</Text>
+                    <Text style={styles.detailValuePrimary}>{selectedPayment.senderName || 'Unknown Sender'}</Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>📱 Payment Platform</Text>
+                    <Text style={styles.detailValue}>{selectedPayment.sourceApp || selectedPayment.source}</Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>🏦 Credited Account / Bank</Text>
+                    <Text style={styles.detailValueBank}>{selectedPayment.targetAccount || 'Primary Bank Account'}</Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>🕒 Received Date & Time</Text>
+                    <Text style={styles.detailValue}>{formatFullDateTime(selectedPayment.receivedAt)}</Text>
+                  </View>
+
+                  {selectedPayment.transactionReference ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>🔖 UPI Ref / UTR Number</Text>
+                      <Text style={styles.detailValueMono}>{selectedPayment.transactionReference}</Text>
+                    </View>
+                  ) : null}
+
+                  {selectedPayment.rawText ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>💬 Original Alert Notification</Text>
+                      <Text style={styles.detailRawText}>{selectedPayment.rawText}</Text>
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                {/* Modal Action Buttons */}
+                <View style={styles.detailsActionRow}>
+                  <TouchableOpacity
+                    style={styles.detailsVoiceBtn}
+                    onPress={() => playVoiceForPayment(selectedPayment)}>
+                    <Text style={styles.detailsVoiceBtnText}>🔊 Speak Voice Alert</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.detailsCloseBtn}
+                    onPress={() => setDetailsModalVisible(false)}>
+                    <Text style={styles.detailsCloseBtnText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Sync Settings Modal */}
       <Modal visible={syncModalVisible} transparent animationType="slide">
@@ -807,5 +926,151 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#64748b',
     marginTop: 4,
+  },
+  cardTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardTapHint: {
+    fontSize: 10,
+    color: '#38bdf8',
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontWeight: '600',
+  },
+  detailsModalBox: {
+    maxHeight: '85%',
+    backgroundColor: '#0f172a',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  detailsCloseX: {
+    padding: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsCloseXText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailsAmountBanner: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  detailsAmountLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#34d399',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  detailsAmountText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  detailsStatusBadge: {
+    marginTop: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  detailsStatusText: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  detailsListScroll: {
+    maxHeight: 250,
+  },
+  detailRow: {
+    backgroundColor: '#111827',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  detailLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  detailValuePrimary: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  detailValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#cbd5e1',
+  },
+  detailValueBank: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#38bdf8',
+  },
+  detailValueMono: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#a78bfa',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  detailRawText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
+  detailsActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  detailsVoiceBtn: {
+    flex: 1,
+    backgroundColor: '#9333ea',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsVoiceBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailsCloseBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsCloseBtnText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

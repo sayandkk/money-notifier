@@ -91,15 +91,15 @@ async function startSyncServer() {
 
     // Save to storage
     const list = getStoredPayments();
-    // Simple duplicate check (same ref or same amount+sender within 3 mins)
+    // Allow repeating payments from the same person (check only for exact duplicate ID or same ref within 2s)
     const isDup = list.some(item => {
-      if (normalizedPayment.transactionReference && item.transactionReference === normalizedPayment.transactionReference) {
+      if (item.id === normalizedPayment.id) return true;
+      if (normalizedPayment.transactionReference &&
+          item.transactionReference === normalizedPayment.transactionReference &&
+          Math.abs(item.receivedAt - normalizedPayment.receivedAt) < 2000) {
         return true;
       }
-      return item.source === normalizedPayment.source &&
-             item.amount === normalizedPayment.amount &&
-             item.senderName === normalizedPayment.senderName &&
-             Math.abs(item.receivedAt - normalizedPayment.receivedAt) < 180000;
+      return false;
     });
 
     if (!isDup) {
