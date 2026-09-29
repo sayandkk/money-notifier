@@ -241,6 +241,11 @@ export default function App(): React.JSX.Element {
     return `${dateStr} at ${timeStr}`;
   };
 
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
   const playVoiceForPayment = (p: Payment) => {
     if (NotificationModule?.speakPaymentAnnouncement) {
       const amt = Math.round(p.amount);
