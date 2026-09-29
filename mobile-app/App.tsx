@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -13,10 +13,73 @@ import {
   Modal,
   Alert,
   Platform,
+  Animated,
+  useColorScheme,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const { NotificationModule } = NativeModules;
 const eventEmitter = NotificationModule ? new NativeEventEmitter(NotificationModule) : null;
+
+// Design Tokens (Light Theme Default, Dark Theme supported)
+const TOKENS = {
+  light: {
+    bg: '#F3F5FA',
+    surface: '#FFFFFF',
+    surface2: '#EAEEF7',
+    line: '#E1E6F0',
+    text: '#121829',
+    muted: '#69728A',
+    accent: '#4F5BFF',
+    accentSoft: '#E6E8FF',
+    money: '#0E9F6E',
+    moneySoft: '#DDF5EA',
+    hero1: '#1B2340',
+    hero2: '#2B3670',
+    cardShadow: {
+      shadowColor: '#1E285A',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 2,
+    },
+  },
+  dark: {
+    bg: '#0B0F1C',
+    surface: '#141A2C',
+    surface2: '#1C2440',
+    line: '#242D4A',
+    text: '#EEF1FA',
+    muted: '#8F99B8',
+    accent: '#7B86FF',
+    accentSoft: '#232B57',
+    money: '#3DDC9B',
+    moneySoft: '#123A30',
+    hero1: '#1E2A66',
+    hero2: '#3A2F8F',
+    cardShadow: {
+      elevation: 0,
+    },
+  },
+};
+
+const APP_META: Record<string, { color: string; heroColor: string; avatar: string; label: string }> = {
+  GOOGLE_PAY: { color: '#3B82F6', heroColor: '#7FB0FF', avatar: 'G', label: 'GPay' },
+  GOOGLE_PAY_BUSINESS: { color: '#3B82F6', heroColor: '#7FB0FF', avatar: 'G', label: 'GPay Biz' },
+  PHONEPE: { color: '#7C3AED', heroColor: '#B79CFF', avatar: 'P', label: 'PhonePe' },
+  PAYTM: { color: '#0EA5E9', heroColor: '#67D3FF', avatar: 'T', label: 'Paytm' },
+  BHIM: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'BHIM' },
+  CRED: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'CRED' },
+  AMAZON_PAY: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'Amazon Pay' },
+  NAVI: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'Navi' },
+  BANK_UPI: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'Bank UPI' },
+  OTHER: { color: '#F59E0B', heroColor: '#FFC966', avatar: 'U', label: 'Other UPI' },
+};
 
 interface Payment {
   id: string;
@@ -30,6 +93,7 @@ interface Payment {
   transactionReference: string | null;
   receivedAt: number;
   rawText?: string;
+  isNew?: boolean;
 }
 
 interface DebugNotif {
@@ -40,11 +104,17 @@ interface DebugNotif {
 }
 
 export default function App(): React.JSX.Element {
+  const systemColorScheme = useColorScheme();
+  const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('system');
+  const activeTheme = themeMode === 'system' ? (systemColorScheme === 'dark' ? 'dark' : 'light') : themeMode;
+  const theme = TOKENS[activeTheme];
+
   const [payments, setPayments] = useState<Payment[]>([]);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [serverUrl, setServerUrl] = useState<string>('http://192.168.1.100:8999/api/payment');
   const [syncStatus, setSyncStatus] = useState<string>('Ready');
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
 
@@ -53,9 +123,47 @@ export default function App(): React.JSX.Element {
   const [debugModalVisible, setDebugModalVisible] = useState<boolean>(false);
   const [debugList, setDebugList] = useState<DebugNotif[]>([]);
 
-  // Selected Transaction for Details Modal
+  // Selected Transaction for Full Details Modal
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [detailsModalVisible, setDetailsModalVisible] = useState<boolean>(false);
+
+  // Pulse animation for green listening dot
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.8,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(pulseOpacity, {
+            toValue: 0.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 0.7,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    pulseLoop.start();
+
+    return () => pulseLoop.stop();
+  }, [pulseAnim, pulseOpacity]);
 
   useEffect(() => {
     checkPermission();
@@ -69,6 +177,8 @@ export default function App(): React.JSX.Element {
       subscription = eventEmitter.addListener('onPaymentReceived', (jsonStr: string) => {
         try {
           const newPayment: Payment = JSON.parse(jsonStr);
+          newPayment.isNew = true;
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setPayments(prev => [newPayment, ...prev.filter(p => p.id !== newPayment.id)]);
         } catch (err) {
           console.error('Error parsing payment event:', err);
@@ -98,7 +208,7 @@ export default function App(): React.JSX.Element {
       await NotificationModule.setVoiceEnabled(next);
       setVoiceEnabled(next);
       if (next) {
-        NotificationModule.speakPaymentAnnouncement('Soundbox voice announcement enabled');
+        NotificationModule.speakPaymentAnnouncement('Voice on');
       }
     }
   };
@@ -128,32 +238,44 @@ export default function App(): React.JSX.Element {
         if (list.length > 0) {
           setPayments(list);
         } else {
-          // Default initial examples
+          // Default initial examples matching spec
           setPayments([
             {
               id: 'demo_1',
+              amount: 1,
+              currency: 'INR',
+              senderName: 'Payment received',
+              targetAccount: 'Merchant business account',
+              source: 'GOOGLE_PAY_BUSINESS',
+              sourceApp: 'Google Pay for Business',
+              transactionType: 'CREDIT',
+              transactionReference: null,
+              receivedAt: Date.now() - 15 * 60 * 1000,
+            },
+            {
+              id: 'demo_2',
               amount: 2500,
               currency: 'INR',
-              senderName: 'Business Customer',
-              targetAccount: 'ICICI Bank Merchant A/c (**3392)',
+              senderName: 'Business customer',
+              targetAccount: 'ICICI Bank ••3392',
               source: 'GOOGLE_PAY_BUSINESS',
               sourceApp: 'Google Pay for Business',
               transactionType: 'CREDIT',
               transactionReference: 'UPI4290182910',
-              receivedAt: Date.now() - 25 * 60 * 1000
+              receivedAt: Date.now() - 41 * 60 * 1000,
             },
             {
-              id: 'demo_2',
+              id: 'demo_3',
               amount: 1000,
               currency: 'INR',
               senderName: 'Anil Kumar',
-              targetAccount: 'State Bank of India (**4589)',
+              targetAccount: 'State Bank of India ••4589',
               source: 'PHONEPE',
               sourceApp: 'PhonePe',
               transactionType: 'CREDIT',
-              transactionReference: 'UTR9384729101',
-              receivedAt: Date.now() - 42 * 60 * 1000
-            }
+              transactionReference: null,
+              receivedAt: Date.now() - 58 * 60 * 1000,
+            },
           ]);
         }
       } catch (err) {
@@ -177,7 +299,7 @@ export default function App(): React.JSX.Element {
         const res = await NotificationModule.testServerConnection(serverUrl);
         if (res.success) {
           setSyncStatus('Connected to Desktop Dashboard!');
-          Alert.alert('Success', 'Connected to Electron Desktop Monitor successfully!');
+          Alert.alert('Success', 'Connected to Desktop Dashboard successfully!');
         } else {
           setSyncStatus('Connection failed: ' + res.message);
           Alert.alert('Connection Failed', res.message);
@@ -204,7 +326,6 @@ export default function App(): React.JSX.Element {
   const triggerTestSimulation = async (platform: string, amt: number, sender: string, acc: string) => {
     if (NotificationModule?.simulatePayment) {
       await NotificationModule.simulatePayment(platform, amt, sender, acc);
-      Alert.alert('Payment Triggered', `Simulated ₹${amt} on ${platform}`);
     }
   };
 
@@ -213,15 +334,35 @@ export default function App(): React.JSX.Element {
   const todayPayments = payments.filter(p => p.receivedAt >= startOfToday && p.transactionType !== 'DEBIT');
   const todayTotal = todayPayments.reduce((acc, curr) => acc + curr.amount, 0);
 
+  // Group by app for split bar
+  const appTotals: Record<string, number> = {};
+  todayPayments.forEach(p => {
+    const key = p.source === 'GOOGLE_PAY_BUSINESS' || p.source === 'GOOGLE_PAY'
+      ? (p.source === 'GOOGLE_PAY_BUSINESS' ? 'GOOGLE_PAY_BUSINESS' : 'GOOGLE_PAY')
+      : p.source === 'PHONEPE'
+      ? 'PHONEPE'
+      : p.source === 'PAYTM'
+      ? 'PAYTM'
+      : 'OTHER';
+    appTotals[key] = (appTotals[key] || 0) + p.amount;
+  });
+
   const filteredPayments = payments.filter(p => {
     if (selectedFilter === 'ALL') return true;
-    return p.source === selectedFilter;
+    if (selectedFilter === 'GOOGLE_PAY') return p.source === 'GOOGLE_PAY';
+    if (selectedFilter === 'GOOGLE_PAY_BUSINESS') return p.source === 'GOOGLE_PAY_BUSINESS';
+    if (selectedFilter === 'PHONEPE') return p.source === 'PHONEPE';
+    if (selectedFilter === 'PAYTM') return p.source === 'PAYTM';
+    if (selectedFilter === 'OTHER') {
+      return !['GOOGLE_PAY', 'GOOGLE_PAY_BUSINESS', 'PHONEPE', 'PAYTM'].includes(p.source);
+    }
+    return true;
   });
 
   const formatAmount = (num: number) => {
     return Number(num).toLocaleString('en-IN', {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     });
   };
 
@@ -230,30 +371,40 @@ export default function App(): React.JSX.Element {
     const dateStr = d.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
     });
     const timeStr = d.toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: true
+      hour12: true,
     });
     return `${dateStr} at ${timeStr}`;
   };
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+  };
+
+  const getMeta = (source: string) => {
+    return APP_META[source] || APP_META.OTHER;
   };
 
   const playVoiceForPayment = (p: Payment) => {
     if (NotificationModule?.speakPaymentAnnouncement) {
       const amt = Math.round(p.amount);
-      const appName = p.sourceApp || p.source;
-      const sender = p.senderName && p.senderName !== 'Unknown Sender' ? `by ${p.senderName}` : '';
-      const text = `Rupees ${amt} received on ${appName} ${sender}`.trim();
+      const meta = getMeta(p.source);
+      const name = p.senderName && p.senderName !== 'Unknown Sender' ? p.senderName : 'Customer';
+      // As per spec: "{App} received {amount} rupees from {name}"
+      const text = `${meta.label} received ${amt} rupees from ${name}`;
       NotificationModule.speakPaymentAnnouncement(text);
     }
+  };
+
+  const toggleCardExpansion = (id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedCardId(expandedCardId === id ? null : id);
   };
 
   const openPaymentDetails = (p: Payment) => {
@@ -261,251 +412,429 @@ export default function App(): React.JSX.Element {
     setDetailsModalVisible(true);
   };
 
-  const getSourceBadgeColor = (source: string) => {
-    switch (source) {
-      case 'GOOGLE_PAY': return '#3b82f6';
-      case 'GOOGLE_PAY_BUSINESS': return '#10b981';
-      case 'PHONEPE': return '#9333ea';
-      case 'PAYTM': return '#06b6d4';
-      case 'BHIM': return '#f97316';
-      case 'CRED': return '#ec4899';
-      case 'AMAZON_PAY': return '#eab308';
-      case 'NAVI': return '#14b8a6';
-      case 'BANK_UPI': return '#8b5cf6';
-      default: return '#64748b';
-    }
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0f19" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar
+        barStyle={activeTheme === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.bg}
+      />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>UPI Payment Monitor</Text>
-          <Text style={styles.headerSubtitle}>Unified Notification Listener</Text>
+      {/* Screen Header */}
+      <View style={[styles.header, { backgroundColor: theme.bg }]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.screenTitle, { color: theme.text }]}>Payment monitor</Text>
+          <Text style={[styles.screenSubtitle, { color: theme.muted }]}>GPay, PhonePe, Paytm and more</Text>
         </View>
         <View style={styles.headerActions}>
+          {/* Voice Toggle Button */}
           <TouchableOpacity
-            style={[styles.headerBtn, voiceEnabled ? { backgroundColor: '#10b981' } : { backgroundColor: '#374151' }]}
+            activeOpacity={0.8}
+            style={[
+              styles.iconButton,
+              { backgroundColor: voiceEnabled ? theme.accentSoft : theme.surface, borderColor: theme.line },
+            ]}
             onPress={toggleVoice}>
-            <Text style={styles.headerBtnText}>{voiceEnabled ? '🔊 Voice: ON' : '🔇 Voice: OFF'}</Text>
+            <Text style={[styles.iconGlyph, { color: voiceEnabled ? theme.accent : theme.muted }]}>
+              {voiceEnabled ? '🔊' : '🔇'}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => setSyncModalVisible(true)}>
-            <Text style={styles.headerBtnText}>💻 Sync</Text>
+
+          {/* Sync / Settings Button */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.iconButton, { backgroundColor: theme.surface, borderColor: theme.line }]}
+            onPress={() => setSyncModalVisible(true)}>
+            <Text style={[styles.iconGlyph, { color: theme.text }]}>⟳</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn} onPress={openDebugInspector}>
-            <Text style={styles.headerBtnText}>🔍 Debug</Text>
+
+          {/* Debug Button */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.iconButton, { backgroundColor: theme.surface, borderColor: theme.line }]}
+            onPress={openDebugInspector}>
+            <Text style={[styles.iconGlyph, { color: theme.text }]}>🔍</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Permission Status Banner */}
-        <View style={[styles.permissionCard, hasPermission ? styles.permActive : styles.permInactive]}>
-          <View style={styles.permTextGroup}>
-            <Text style={styles.permTitle}>
-              {hasPermission ? '● Monitoring Active' : '○ Notification Access Disabled'}
-            </Text>
-            <Text style={styles.permDesc}>
-              {hasPermission
-                ? 'Listening to GPay, PhonePe, Paytm, and GPay Business notifications with Voice Soundbox'
-                : 'Grant permission to automatically detect incoming payments and speak alerts'}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}>
+
+        {/* Hero Card with Gradient & Split Bar */}
+        <View style={[styles.heroCard, { backgroundColor: theme.hero1 }]}>
+          {/* Top Status & Refresh Row */}
+          <View style={styles.heroTopRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.listeningPill}
+              onPress={hasPermission ? checkPermission : openSettings}>
+              <View style={styles.pulseContainer}>
+                {hasPermission && (
+                  <Animated.View
+                    style={[
+                      styles.pulseCircle,
+                      {
+                        transform: [{ scale: pulseAnim }],
+                        opacity: pulseOpacity,
+                      },
+                    ]}
+                  />
+                )}
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: hasPermission ? '#48F0A8' : '#EF4444' },
+                  ]}
+                />
+              </View>
+              <Text style={styles.listeningText}>
+                {hasPermission ? 'Listening for payments' : 'Tap to enable permission'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.refreshPill}
+              onPress={() => {
+                checkPermission();
+                loadStoredPayments();
+              }}>
+              <Text style={styles.refreshText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Hero Amount Section */}
+          <View style={styles.heroMain}>
+            <Text style={styles.heroLabel}>Received today</Text>
+            <View style={styles.heroAmountRow}>
+              <Text style={styles.heroRupee}>₹</Text>
+              <Text style={styles.heroAmount}>{formatAmount(todayTotal)}</Text>
+            </View>
+            <Text style={styles.heroCount}>
+              {todayPayments.length} {todayPayments.length === 1 ? 'payment' : 'payments'} today
             </Text>
           </View>
-          <TouchableOpacity
-            style={[styles.permButton, hasPermission ? styles.permBtnActive : styles.permBtnInactive]}
-            onPress={hasPermission ? checkPermission : openSettings}>
-            <Text style={styles.permBtnLabel}>{hasPermission ? 'Refresh' : 'Enable'}</Text>
-          </TouchableOpacity>
+
+          {/* Split Bar */}
+          {todayTotal > 0 && (
+            <View style={styles.splitBarContainer}>
+              <View style={styles.splitBar}>
+                {Object.keys(appTotals).map((appKey, index) => {
+                  const amt = appTotals[appKey];
+                  const widthPct = Math.max(3, (amt / todayTotal) * 100);
+                  const meta = APP_META[appKey] || APP_META.OTHER;
+                  return (
+                    <View
+                      key={index}
+                      style={[
+                        styles.splitSegment,
+                        {
+                          width: `${widthPct}%`,
+                          backgroundColor: meta.heroColor,
+                          marginRight: index < Object.keys(appTotals).length - 1 ? 2 : 0,
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+
+              {/* Legend */}
+              <View style={styles.legendRow}>
+                {Object.keys(appTotals).map((appKey, index) => {
+                  const amt = appTotals[appKey];
+                  const meta = APP_META[appKey] || APP_META.OTHER;
+                  return (
+                    <View key={index} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: meta.heroColor }]} />
+                      <Text style={styles.legendText}>
+                        {meta.label} ₹{Math.round(amt).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* Hero Card: Today's Received */}
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTag}>TODAY'S RECEIVED AMOUNT</Text>
-          <Text style={styles.heroAmount}>₹{formatAmount(todayTotal)}</Text>
-          <Text style={styles.heroFooter}>
-            {todayPayments.length} {todayPayments.length === 1 ? 'payment' : 'payments'} received today
-          </Text>
+        {/* Filter Chips - Horizontal Scroll */}
+        <View style={styles.filterSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}>
+            {[
+              { id: 'ALL', label: 'All' },
+              { id: 'GOOGLE_PAY', label: 'GPay' },
+              { id: 'GOOGLE_PAY_BUSINESS', label: 'GPay Biz' },
+              { id: 'PHONEPE', label: 'PhonePe' },
+              { id: 'PAYTM', label: 'Paytm' },
+              { id: 'OTHER', label: 'Other UPI' },
+            ].map(item => {
+              const isActive = selectedFilter === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: isActive ? theme.text : theme.surface,
+                      borderColor: isActive ? theme.text : theme.line,
+                    },
+                  ]}
+                  onPress={() => setSelectedFilter(item.id)}>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: isActive ? theme.bg : theme.muted },
+                    ]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
-        {/* Platform Filters */}
-        <View style={styles.filterRow}>
-          {['ALL', 'GOOGLE_PAY', 'GOOGLE_PAY_BUSINESS', 'PHONEPE', 'PAYTM', 'OTHER'].map(filterKey => {
-            const isSelected = selectedFilter === filterKey;
-            const label = filterKey === 'ALL'
-              ? 'All'
-              : filterKey === 'GOOGLE_PAY'
-              ? 'GPay'
-              : filterKey === 'GOOGLE_PAY_BUSINESS'
-              ? 'GPay Biz'
-              : filterKey === 'PHONEPE'
-              ? 'PhonePe'
-              : filterKey === 'PAYTM'
-              ? 'Paytm'
-              : 'Other UPI';
+        {/* Voice Test Card */}
+        <View style={[styles.testCard, { backgroundColor: theme.surface, borderColor: theme.line }]}>
+          <Text style={[styles.testLabel, { color: theme.muted }]}>Test voice</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.testButtonsRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.testPill, { backgroundColor: theme.accentSoft }]}
+              onPress={() => triggerTestSimulation('PHONEPE', 500, 'Rahul', 'Primary Bank A/c')}>
+              <Text style={[styles.testPillText, { color: theme.accent }]}>₹500 PhonePe</Text>
+            </TouchableOpacity>
 
-            return (
-              <TouchableOpacity
-                key={filterKey}
-                style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-                onPress={() => setSelectedFilter(filterKey)}>
-                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.testPill, { backgroundColor: theme.accentSoft }]}
+              onPress={() => triggerTestSimulation('GOOGLE_PAY', 500, 'Rahul', 'SBI A/c ••4589')}>
+              <Text style={[styles.testPillText, { color: theme.accent }]}>₹500 GPay</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.testPill, { backgroundColor: theme.accentSoft }]}
+              onPress={() => triggerTestSimulation('PAYTM', 750, 'Suresh', 'Paytm Bank')}>
+              <Text style={[styles.testPillText, { color: theme.accent }]}>₹750 Paytm</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.testPill, { backgroundColor: theme.accentSoft }]}
+              onPress={() => triggerTestSimulation('GOOGLE_PAY_BUSINESS', 2500, 'Business customer', 'ICICI Bank ••3392')}>
+              <Text style={[styles.testPillText, { color: theme.accent }]}>₹2,500 GPay Biz</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
 
-        {/* Quick Test Bar */}
-        <View style={styles.quickTestBar}>
-          <Text style={styles.quickTestLabel}>Quick Voice Test:</Text>
-          <TouchableOpacity
-            style={[styles.testBtn, { backgroundColor: '#9333ea' }]}
-            onPress={() => triggerTestSimulation('PHONEPE', 500, 'Rahul', 'Primary Bank A/c')}>
-            <Text style={styles.testBtnText}>🔊 ₹500 PhonePe (Rahul)</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.testBtn}
-            onPress={() => triggerTestSimulation('GOOGLE_PAY', 500, 'Rahul', 'SBI A/c 4589')}>
-            <Text style={styles.testBtnText}>+ ₹500 GPay</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.testBtn}
-            onPress={() => triggerTestSimulation('PAYTM', 750, 'Suresh', 'Paytm Bank')}>
-            <Text style={styles.testBtnText}>+ ₹750 Paytm</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Payment List */}
-        <View style={styles.listSection}>
-          <Text style={styles.sectionHeading}>Recent Payments</Text>
+        {/* Recent Payments Section */}
+        <View style={styles.listContainer}>
+          <View style={styles.listHeadingRow}>
+            <Text style={[styles.sectionHeading, { color: theme.text }]}>Recent payments</Text>
+            <Text style={[styles.shownCount, { color: theme.muted }]}>
+              {filteredPayments.length} shown
+            </Text>
+          </View>
 
           {filteredPayments.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>No payments detected yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Incoming payments from Google Pay, PhonePe, Paytm, or GPay Business will appear here automatically.
+            <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.line }]}>
+              <Text style={[styles.emptyText, { color: theme.muted }]}>
+                No payments from this filter yet. New ones appear here as they arrive.
               </Text>
             </View>
           ) : (
-            filteredPayments.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                activeOpacity={0.75}
-                style={styles.paymentCard}
-                onPress={() => openPaymentDetails(item)}>
-                <View style={styles.cardTopRow}>
-                  <View style={[styles.platformBadge, { backgroundColor: getSourceBadgeColor(item.source) + '22', borderColor: getSourceBadgeColor(item.source) + '55' }]}>
-                    <Text style={[styles.platformBadgeText, { color: getSourceBadgeColor(item.source) }]}>
-                      {item.sourceApp || item.source}
-                    </Text>
-                  </View>
-                  <View style={styles.cardTimeRow}>
-                    <Text style={styles.cardTime}>{formatTime(item.receivedAt)}</Text>
-                    <Text style={styles.cardTapHint}>ℹ️ Details</Text>
-                  </View>
-                </View>
+            filteredPayments.map(item => {
+              const meta = getMeta(item.source);
+              const isExpanded = expandedCardId === item.id;
 
-                <View style={styles.cardMainRow}>
-                  <View style={styles.cardSenderGroup}>
-                    <Text style={styles.senderName}>{item.senderName || 'Unknown Sender'}</Text>
-                    {item.targetAccount ? (
-                      <View style={styles.accountBadge}>
-                        <Text style={styles.accountText}>🏦 {item.targetAccount}</Text>
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.paymentCard,
+                    {
+                      backgroundColor: item.isNew ? theme.moneySoft : theme.surface,
+                      borderColor: theme.line,
+                      ...theme.cardShadow,
+                    },
+                  ]}
+                  onPress={() => toggleCardExpansion(item.id)}>
+                  <View style={styles.cardHeaderRow}>
+                    {/* Brand Avatar */}
+                    <View style={[styles.avatar, { backgroundColor: meta.color }]}>
+                      <Text style={styles.avatarLetter}>{meta.avatar}</Text>
+                    </View>
+
+                    {/* Middle Info */}
+                    <View style={styles.cardMiddle}>
+                      <Text style={[styles.payerName, { color: theme.text }]} numberOfLines={1}>
+                        {item.senderName || 'Payment received'}
+                      </Text>
+                      <Text style={[styles.metaText, { color: theme.muted }]} numberOfLines={1}>
+                        {meta.label} · {item.targetAccount || 'Bank account'}
+                      </Text>
+                    </View>
+
+                    {/* Right Amount & Time */}
+                    <View style={styles.cardRight}>
+                      <Text style={[styles.amountText, { color: theme.money }]}>
+                        +₹{formatAmount(item.amount)}
+                      </Text>
+                      <Text style={[styles.timeText, { color: theme.muted }]}>
+                        {formatTime(item.receivedAt)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Expandable Detail Section */}
+                  {isExpanded && (
+                    <View style={[styles.expandedContent, { borderTopColor: theme.line }]}>
+                      <View style={styles.expandedRow}>
+                        <Text style={[styles.expandedLabel, { color: theme.muted }]}>Received via</Text>
+                        <Text style={[styles.expandedValue, { color: theme.text }]}>
+                          {item.sourceApp || meta.label}
+                        </Text>
                       </View>
-                    ) : null}
-                  </View>
-                  <Text style={styles.cardAmount}>+ ₹{formatAmount(item.amount)}</Text>
-                </View>
 
-                {item.transactionReference ? (
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.refText}>Ref / UTR: {item.transactionReference}</Text>
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            ))
+                      <View style={styles.expandedRow}>
+                        <Text style={[styles.expandedLabel, { color: theme.muted }]}>Account</Text>
+                        <Text style={[styles.expandedValue, { color: theme.text }]}>
+                          {item.targetAccount || 'Primary Account'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.expandedRow}>
+                        <Text style={[styles.expandedLabel, { color: theme.muted }]}>Date & Time</Text>
+                        <Text style={[styles.expandedValue, { color: theme.text }]}>
+                          {formatFullDateTime(item.receivedAt)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.expandedRow}>
+                        <Text style={[styles.expandedLabel, { color: theme.muted }]}>UTR / Ref</Text>
+                        <Text style={[styles.expandedValue, { color: theme.accent }]}>
+                          {item.transactionReference || 'Not shown in notification'}
+                        </Text>
+                      </View>
+
+                      {item.rawText ? (
+                        <View style={styles.rawAlertBox}>
+                          <Text style={[styles.rawAlertText, { color: theme.muted }]}>
+                            💬 {item.rawText}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {/* Action Row */}
+                      <View style={styles.cardActionRow}>
+                        <TouchableOpacity
+                          style={[styles.voiceActionBtn, { backgroundColor: theme.accentSoft }]}
+                          onPress={() => playVoiceForPayment(item)}>
+                          <Text style={[styles.voiceActionBtnText, { color: theme.accent }]}>
+                            🔊 Replay Voice Alert
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.fullDetailsBtn, { backgroundColor: theme.surface2 }]}
+                          onPress={() => openPaymentDetails(item)}>
+                          <Text style={[styles.fullDetailsBtnText, { color: theme.text }]}>
+                            View Full Details
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
-      {/* Payment Details Modal */}
+      {/* Full Transaction Details Modal */}
       <Modal visible={detailsModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.detailsModalBox]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.line }]}>
             {selectedPayment && (
               <>
-                <View style={styles.detailsHeader}>
-                  <View style={[styles.platformBadge, { backgroundColor: getSourceBadgeColor(selectedPayment.source) + '22', borderColor: getSourceBadgeColor(selectedPayment.source) + '66' }]}>
-                    <Text style={[styles.platformBadgeText, { color: getSourceBadgeColor(selectedPayment.source) }]}>
-                      {selectedPayment.sourceApp || selectedPayment.source}
+                <View style={styles.detailsModalHeader}>
+                  <View style={[styles.avatarSmall, { backgroundColor: getMeta(selectedPayment.source).color }]}>
+                    <Text style={styles.avatarLetterSmall}>{getMeta(selectedPayment.source).avatar}</Text>
+                  </View>
+                  <Text style={[styles.detailsModalTitle, { color: theme.text }]}>
+                    {getMeta(selectedPayment.source).label} Payment
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.closeCircle}
+                    onPress={() => setDetailsModalVisible(false)}>
+                    <Text style={[styles.closeCircleText, { color: theme.muted }]}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.detailsAmountCard, { backgroundColor: theme.surface2 }]}>
+                  <Text style={[styles.detailsAmountLabel, { color: theme.muted }]}>TOTAL RECEIVED</Text>
+                  <Text style={[styles.detailsAmountVal, { color: theme.money }]}>
+                    + ₹{formatAmount(selectedPayment.amount)}
+                  </Text>
+                </View>
+
+                <ScrollView style={{ maxHeight: 240, marginVertical: 10 }}>
+                  <View style={styles.detailItem}>
+                    <Text style={[styles.detailItemLabel, { color: theme.muted }]}>Payer / Sender</Text>
+                    <Text style={[styles.detailItemVal, { color: theme.text }]}>
+                      {selectedPayment.senderName || 'Unknown Customer'}
                     </Text>
                   </View>
-                  <TouchableOpacity style={styles.detailsCloseX} onPress={() => setDetailsModalVisible(false)}>
-                    <Text style={styles.detailsCloseXText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
 
-                {/* Amount Header Banner */}
-                <View style={styles.detailsAmountBanner}>
-                  <Text style={styles.detailsAmountLabel}>PAYMENT RECEIVED</Text>
-                  <Text style={styles.detailsAmountText}>+ ₹{formatAmount(selectedPayment.amount)}</Text>
-                  <View style={styles.detailsStatusBadge}>
-                    <Text style={styles.detailsStatusText}>● CREDITED (SUCCESS)</Text>
-                  </View>
-                </View>
-
-                {/* Detail Information Rows */}
-                <ScrollView style={styles.detailsListScroll}>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>👤 Sender / Person</Text>
-                    <Text style={styles.detailValuePrimary}>{selectedPayment.senderName || 'Unknown Sender'}</Text>
+                  <View style={styles.detailItem}>
+                    <Text style={[styles.detailItemLabel, { color: theme.muted }]}>Credited Bank / Account</Text>
+                    <Text style={[styles.detailItemVal, { color: theme.text }]}>
+                      {selectedPayment.targetAccount || 'Primary Bank Account'}
+                    </Text>
                   </View>
 
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>📱 Payment Platform</Text>
-                    <Text style={styles.detailValue}>{selectedPayment.sourceApp || selectedPayment.source}</Text>
+                  <View style={styles.detailItem}>
+                    <Text style={[styles.detailItemLabel, { color: theme.muted }]}>Timestamp</Text>
+                    <Text style={[styles.detailItemVal, { color: theme.text }]}>
+                      {formatFullDateTime(selectedPayment.receivedAt)}
+                    </Text>
                   </View>
 
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>🏦 Credited Account / Bank</Text>
-                    <Text style={styles.detailValueBank}>{selectedPayment.targetAccount || 'Primary Bank Account'}</Text>
+                  <View style={styles.detailItem}>
+                    <Text style={[styles.detailItemLabel, { color: theme.muted }]}>UPI Ref / UTR</Text>
+                    <Text style={[styles.detailItemVal, { color: theme.accent }]}>
+                      {selectedPayment.transactionReference || 'Not provided'}
+                    </Text>
                   </View>
 
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>🕒 Received Date & Time</Text>
-                    <Text style={styles.detailValue}>{formatFullDateTime(selectedPayment.receivedAt)}</Text>
-                  </View>
-
-                  {selectedPayment.transactionReference ? (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>🔖 UPI Ref / UTR Number</Text>
-                      <Text style={styles.detailValueMono}>{selectedPayment.transactionReference}</Text>
+                  {selectedPayment.rawText && (
+                    <View style={styles.detailItem}>
+                      <Text style={[styles.detailItemLabel, { color: theme.muted }]}>Raw Notification</Text>
+                      <Text style={[styles.detailItemVal, { color: theme.muted, fontSize: 11 }]}>
+                        {selectedPayment.rawText}
+                      </Text>
                     </View>
-                  ) : null}
-
-                  {selectedPayment.rawText ? (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>💬 Original Alert Notification</Text>
-                      <Text style={styles.detailRawText}>{selectedPayment.rawText}</Text>
-                    </View>
-                  ) : null}
+                  )}
                 </ScrollView>
 
-                {/* Modal Action Buttons */}
-                <View style={styles.detailsActionRow}>
+                <View style={styles.detailsModalActions}>
                   <TouchableOpacity
-                    style={styles.detailsVoiceBtn}
+                    style={[styles.detailsSpeakBtn, { backgroundColor: theme.accent }]}
                     onPress={() => playVoiceForPayment(selectedPayment)}>
-                    <Text style={styles.detailsVoiceBtnText}>🔊 Speak Voice Alert</Text>
+                    <Text style={styles.detailsSpeakBtnText}>🔊 Speak Voice</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.detailsCloseBtn}
+                    style={[styles.detailsCloseBtn, { backgroundColor: theme.surface2 }]}
                     onPress={() => setDetailsModalVisible(false)}>
-                    <Text style={styles.detailsCloseBtnText}>Close</Text>
+                    <Text style={[styles.detailsCloseBtnText, { color: theme.text }]}>Close</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -514,33 +843,37 @@ export default function App(): React.JSX.Element {
         </View>
       </Modal>
 
-      {/* Sync Settings Modal */}
+      {/* Desktop Wi-Fi Sync Modal */}
       <Modal visible={syncModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalHeader}>Desktop Wi-Fi Synchronization</Text>
-            <Text style={styles.modalDesc}>
-              Enter the Desktop Server URL displayed on your Electron dashboard to stream notifications in real time.
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.line }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Desktop Wi-Fi Sync</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.muted }]}>
+              Enter the Desktop Server URL shown on your Electron dashboard to stream notifications in real time.
             </Text>
 
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { backgroundColor: theme.surface2, borderColor: theme.line, color: theme.text }]}
               value={serverUrl}
               onChangeText={setServerUrl}
               placeholder="http://192.168.1.x:8999/api/payment"
-              placeholderTextColor="#64748b"
+              placeholderTextColor={theme.muted}
               autoCapitalize="none"
               autoCorrect={false}
             />
 
-            <Text style={styles.syncStatusText}>Status: {syncStatus}</Text>
+            <Text style={[styles.syncStatusMsg, { color: theme.accent }]}>Status: {syncStatus}</Text>
 
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSyncModalVisible(false)}>
-                <Text style={styles.modalCloseBtnText}>Close</Text>
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.modalBtnCancel, { backgroundColor: theme.surface2 }]}
+                onPress={() => setSyncModalVisible(false)}>
+                <Text style={[styles.modalBtnCancelText, { color: theme.text }]}>Close</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={saveAndTestSync}>
-                <Text style={styles.modalSaveBtnText}>Test & Connect</Text>
+              <TouchableOpacity
+                style={[styles.modalBtnSave, { backgroundColor: theme.accent }]}
+                onPress={saveAndTestSync}>
+                <Text style={styles.modalBtnSaveText}>Test & Connect</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -550,33 +883,37 @@ export default function App(): React.JSX.Element {
       {/* Debug Inspector Modal */}
       <Modal visible={debugModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-            <Text style={styles.modalHeader}>Notification Inspector</Text>
-            <Text style={styles.modalDesc}>
-              Raw notifications captured on this device. Useful for verifying package names and formats.
+          <View style={[styles.modalContent, { maxHeight: '80%', backgroundColor: theme.surface, borderColor: theme.line }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Notification Inspector</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.muted }]}>
+              Raw captured notifications on this device.
             </Text>
 
             <ScrollView style={{ marginTop: 12 }}>
               {debugList.length === 0 ? (
-                <Text style={{ color: '#94a3b8', textAlign: 'center', marginVertical: 20 }}>
+                <Text style={{ color: theme.muted, textAlign: 'center', marginVertical: 20 }}>
                   No raw notifications captured yet.
                 </Text>
               ) : (
                 debugList.map((notif, index) => (
-                  <View key={index} style={styles.debugItem}>
-                    <Text style={styles.debugPkg}>Package: {notif.packageName}</Text>
-                    <Text style={styles.debugTitle}>Title: {notif.title}</Text>
-                    <Text style={styles.debugText}>Text: {notif.text}</Text>
-                    <Text style={styles.debugTime}>{new Date(notif.timestamp).toLocaleTimeString()}</Text>
+                  <View
+                    key={index}
+                    style={[styles.debugItem, { backgroundColor: theme.surface2, borderColor: theme.line }]}>
+                    <Text style={[styles.debugPkg, { color: theme.accent }]}>Package: {notif.packageName}</Text>
+                    <Text style={[styles.debugTitle, { color: theme.text }]}>Title: {notif.title}</Text>
+                    <Text style={[styles.debugText, { color: theme.muted }]}>Text: {notif.text}</Text>
+                    <Text style={[styles.debugTime, { color: theme.muted }]}>
+                      {new Date(notif.timestamp).toLocaleTimeString()}
+                    </Text>
                   </View>
                 ))
               )}
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { marginTop: 16 }]}
+              style={[styles.modalBtnCancel, { marginTop: 16, backgroundColor: theme.surface2 }]}
               onPress={() => setDebugModalVisible(false)}>
-              <Text style={styles.modalCloseBtnText}>Close</Text>
+              <Text style={[styles.modalBtnCancelText, { color: theme.text }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -588,494 +925,518 @@ export default function App(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0f19',
   },
   header: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: '#111726',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    maxWidth: 460,
+    width: '100%',
+    alignSelf: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
+  headerLeft: {
+    flex: 1,
   },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#64748b',
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  screenSubtitle: {
+    fontSize: 13,
+    fontWeight: '400',
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row',
     gap: 8,
   },
-  headerBtn: {
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  headerBtnText: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 16,
-  },
-  permissionCard: {
-    padding: 14,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-  },
-  permActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  permInactive: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  permTextGroup: {
-    flex: 1,
-    marginRight: 10,
-  },
-  permTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  permDesc: {
-    fontSize: 11,
-    color: '#94a3b8',
-  },
-  permButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  permBtnActive: {
-    backgroundColor: '#1e293b',
-  },
-  permBtnInactive: {
-    backgroundColor: '#ef4444',
-  },
-  permBtnLabel: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  heroCard: {
-    backgroundColor: '#131d31',
-    padding: 22,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    alignItems: 'center',
-  },
-  heroTag: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: '#34d399',
-    marginBottom: 6,
-  },
-  heroAmount: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  heroFooter: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 6,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-  },
-  filterChipSelected: {
-    backgroundColor: '#10b981',
-  },
-  filterChipText: {
-    color: '#94a3b8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterChipTextSelected: {
-    color: '#ffffff',
-  },
-  quickTestBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  quickTestLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  testBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  testBtnText: {
-    color: '#cbd5e1',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  listSection: {
-    gap: 10,
-  },
-  sectionHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  paymentCard: {
-    backgroundColor: '#111726',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    gap: 8,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  platformBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-  },
-  platformBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cardTime: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  cardMainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardSenderGroup: {
-    flex: 1,
-  },
-  senderName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  accountBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  accountText: {
-    fontSize: 11,
-    color: '#38bdf8',
-  },
-  cardAmount: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#10b981',
-  },
-  cardFooter: {
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.04)',
-    paddingTop: 6,
-  },
-  refText: {
-    fontSize: 10,
-    color: '#64748b',
-  },
-  emptyContainer: {
-    padding: 30,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyTitle: {
-    color: '#94a3b8',
-    fontSize: 15,
+  iconGlyph: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+    gap: 14,
+    maxWidth: 460,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  heroCard: {
+    borderRadius: 26,
+    padding: 20,
+    overflow: 'hidden',
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  listeningPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 8,
+  },
+  pulseContainer: {
+    width: 10,
+    height: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pulseCircle: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#48F0A8',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  listeningText: {
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '600',
   },
-  emptySubtitle: {
-    color: '#475569',
+  refreshPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  refreshText: {
+    color: '#ffffff',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  heroMain: {
+    marginBottom: 16,
+  },
+  heroLabel: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  heroAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  heroRupee: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 26,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  heroAmount: {
+    color: '#ffffff',
+    fontSize: 42,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  heroCount: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12.5,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  splitBarContainer: {
+    marginTop: 4,
+  },
+  splitBar: {
+    height: 8,
+    borderRadius: 4,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  splitSegment: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  legendText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  filterSection: {
+    marginHorizontal: -16,
+  },
+  filterScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  testCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    padding: 12,
+    gap: 8,
+  },
+  testLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 2,
+  },
+  testButtonsRow: {
+    gap: 8,
+    flexDirection: 'row',
+  },
+  testPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  testPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  listContainer: {
+    gap: 10,
+    marginTop: 2,
+  },
+  listHeadingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  sectionHeading: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  shownCount: {
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+  emptyCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
     textAlign: 'center',
-    marginTop: 6,
+    lineHeight: 18,
+  },
+  paymentCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLetter: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  cardMiddle: {
+    flex: 1,
+  },
+  payerName: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  metaText: {
+    fontSize: 12.5,
+  },
+  cardRight: {
+    alignItems: 'flex-end',
+  },
+  amountText: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  timeText: {
+    fontSize: 12,
+  },
+  expandedContent: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    gap: 6,
+  },
+  expandedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  expandedLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  expandedValue: {
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  rawAlertBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 4,
+  },
+  rawAlertText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  cardActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  voiceActionBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  voiceActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  fullDetailsBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  fullDetailsBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#111827',
-    borderRadius: 16,
+    borderRadius: 22,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
-  modalHeader: {
+  modalTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
+    fontWeight: '800',
+    marginBottom: 4,
   },
-  modalDesc: {
-    fontSize: 12,
-    color: '#94a3b8',
-    lineHeight: 16,
-    marginBottom: 12,
+  modalSubtitle: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginBottom: 14,
   },
   textInput: {
-    backgroundColor: '#0b0f19',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
-    padding: 10,
-    color: '#ffffff',
+    borderRadius: 10,
+    padding: 12,
     fontSize: 13,
   },
-  syncStatusText: {
-    fontSize: 11,
-    color: '#34d399',
+  syncStatusMsg: {
+    fontSize: 11.5,
+    fontWeight: '600',
     marginTop: 8,
   },
-  modalActionRow: {
+  modalButtonsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
     marginTop: 16,
   },
-  modalCloseBtn: {
+  modalBtnCancel: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#1e293b',
+    paddingVertical: 9,
+    borderRadius: 8,
   },
-  modalCloseBtnText: {
-    color: '#cbd5e1',
+  modalBtnCancelText: {
     fontWeight: '600',
     fontSize: 13,
   },
-  modalSaveBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#10b981',
+  modalBtnSave: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 8,
   },
-  modalSaveBtnText: {
+  modalBtnSaveText: {
     color: '#ffffff',
     fontWeight: '700',
     fontSize: 13,
   },
   debugItem: {
-    backgroundColor: '#0b0f19',
     padding: 10,
-    borderRadius: 8,
-    marginBottom: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    marginBottom: 8,
   },
   debugPkg: {
     fontSize: 11,
-    color: '#38bdf8',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   debugTitle: {
     fontSize: 12,
-    color: '#ffffff',
+    fontWeight: '600',
     marginTop: 2,
   },
   debugText: {
     fontSize: 11,
-    color: '#cbd5e1',
     marginTop: 2,
   },
   debugTime: {
-    fontSize: 9,
-    color: '#64748b',
+    fontSize: 10,
     marginTop: 4,
   },
-  cardTimeRow: {
+  detailsModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  cardTapHint: {
-    fontSize: 10,
-    color: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontWeight: '600',
-  },
-  detailsModalBox: {
-    maxHeight: '85%',
-    backgroundColor: '#0f172a',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  detailsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: 10,
     marginBottom: 12,
   },
-  detailsCloseX: {
-    padding: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 16,
-    width: 28,
-    height: 28,
+  avatarSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  detailsCloseXText: {
-    color: '#94a3b8',
-    fontSize: 13,
+  avatarLetterSmall: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  detailsModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    flex: 1,
+  },
+  closeCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeCircleText: {
+    fontSize: 14,
     fontWeight: '700',
   },
-  detailsAmountBanner: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
+  detailsAmountCard: {
+    padding: 14,
+    borderRadius: 14,
     alignItems: 'center',
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    marginBottom: 8,
   },
   detailsAmountLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#34d399',
-    letterSpacing: 1,
-    marginBottom: 4,
+    letterSpacing: 0.8,
   },
-  detailsAmountText: {
-    fontSize: 28,
+  detailsAmountVal: {
+    fontSize: 26,
     fontWeight: '800',
-    color: '#ffffff',
+    marginTop: 2,
   },
-  detailsStatusBadge: {
-    marginTop: 6,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  detailItem: {
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  detailsStatusText: {
-    color: '#10b981',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  detailsListScroll: {
-    maxHeight: 250,
-  },
-  detailRow: {
-    backgroundColor: '#111827',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  detailLabel: {
+  detailItemLabel: {
     fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600',
-    marginBottom: 2,
+    fontWeight: '500',
   },
-  detailValuePrimary: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  detailValue: {
+  detailItemVal: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#cbd5e1',
+    marginTop: 2,
   },
-  detailValueBank: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#38bdf8',
-  },
-  detailValueMono: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#a78bfa',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  detailRawText: {
-    fontSize: 11,
-    color: '#64748b',
-    fontStyle: 'italic',
-  },
-  detailsActionRow: {
+  detailsModalActions: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 14,
   },
-  detailsVoiceBtn: {
+  detailsSpeakBtn: {
     flex: 1,
-    backgroundColor: '#9333ea',
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  detailsVoiceBtnText: {
+  detailsSpeakBtnText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   detailsCloseBtn: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
+    borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   detailsCloseBtnText: {
-    color: '#cbd5e1',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
 });
